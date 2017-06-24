@@ -34,8 +34,8 @@
 (module+ main
   (require racket/cmdline
            racket/file
-           racket/string
-           json)
+           json
+           "private/init.rkt")
 
   (define default-configfile-path
     (build-path (current-directory) ".nautilusrc"))
@@ -52,6 +52,9 @@
 
   (define default-config
     (hash "sqlite-path" (build-path (current-directory) "nautilus.db")
+          "pwlrepo-path" (build-path (current-directory) "papers")
+          "pwlrepo-hostname" "github.com"
+          "pwlrepo-repository" "papers-we-love/papers-we-love.git"
           "logfile-path" (build-path (current-directory) "logs")))
 
   (define config (make-parameter default-config))
@@ -63,4 +66,4 @@
         (config)))
 
   (parameterize ([config (read-config config-path)])
-    (println (config))))
+    (nautilus-go (config))))
