@@ -2,5 +2,6 @@
   "logfile-path": "",
   "sqlite-path": "",
   "pwlrepo-path": "",
-  "pwlrepo-url": ""
+  "pwlrepo-hostname": "",
+  "pwlrepo-repository": ""
 }
