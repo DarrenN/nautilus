@@ -30,6 +30,37 @@
   ;; Tests to be run with raco test
   )
 
+;; Command line takes one arg: path to .nautilusrc
 (module+ main
-  ;; Main entry point, executed when run with the `racket` executable or DrRacket.
-  )
+  (require racket/cmdline
+           racket/file
+           racket/string
+           json)
+
+  (define default-configfile-path
+    (build-path (current-directory) ".nautilusrc"))
+
+  ;; If no cmdline path to config file then use default path
+  (define config-path
+    (let* ([args (current-command-line-arguments)]
+           [arg0 (if (zero? (vector-length args))
+                     #f
+                     (vector-ref args 0))])
+      (if (path-string? arg0)
+          (path->complete-path arg0)
+          default-configfile-path)))
+
+  (define default-config
+    (hash "sqlite-path" (build-path (current-directory) "nautilus.db")
+          "logfile-path" (build-path (current-directory) "logs")))
+
+  (define config (make-parameter default-config))
+
+  ;; Read config file and parse into hash
+  (define (read-config path)
+    (if (and (path? path) (file-exists? path))
+        (call-with-input-file path (λ (in) (read-json in)))
+        (config)))
+
+  (parameterize ([config (read-config config-path)])
+    (println (config))))
