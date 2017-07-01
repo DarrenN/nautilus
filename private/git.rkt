@@ -17,8 +17,8 @@
         (list 'error
               (format "Couldn't checkout repo ~a/~a" hostname repository)))])
 
-    (define checkout
-      (git-checkout hostname repository #:transport 'https #:dest-dir dest-dir))
+    (define checkout "a")
+      ;(git-checkout hostname repository #:transport 'https #:dest-dir dest-dir))
 
     (if (string? checkout)
         (append state

@@ -1,9 +1,11 @@
 #lang racket
 
-(require threading
-         (except-in "hash.rkt" get)
+(require db
+         threading
+         "db-adapter.rkt"
          "git.rkt"
-         "logger.rkt")
+         "logger.rkt"
+         "pdf.rkt")
 
 (provide nautilus-go)
 
@@ -39,11 +41,22 @@ General notes
 |#
 
 (define (nautilus-go config)
+  ;; Crash if sqlite3 is not available
+  (when (not (sqlite3-available?))
+    (println "SQLite3 is not available on this system!")
+    (exit 1))
+
   (create-logging-thread (hash-ref config "logfile-path"))
+
+  (define conn (create-connection (hash-ref config "sqlite-path")))
+  (create-tables conn)
+
+  (define newconfig (hash-set config "sqlite-conn" conn))
 
   (define result
     (~>> '(ok)
-         (get-repo format-log config)))
+         (get-repo format-log newconfig)
+         (process-pdfs format-log newconfig)))
 
   (log-messages result)
   (sleep 2) ; allow time to flush the log

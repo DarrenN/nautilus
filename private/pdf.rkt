@@ -1,0 +1,59 @@
+#lang racket
+
+(require file/glob
+         gregor
+         openssl/sha1
+         racket/path
+         threading
+         "db-adapter.rkt"
+         "structs.rkt")
+
+(provide process-pdfs)
+
+(define (timestamp)
+  (datetime->iso8601 (now/utc)))
+
+(define (normalize-filename file-path)
+  (~> file-path
+      (path-replace-extension "")
+      path->string
+      string-downcase
+      (string-replace  #rx"-|_" " ")
+      string-normalize-spaces))
+
+(define (extract-filedata repo-path path)
+  (call-with-input-file path #:mode 'binary
+    (λ (in)
+      (define-values
+        (directory-path file-path is-dir)
+        (split-path (find-relative-path repo-path path)))
+      (define datetime (timestamp))
+      (pdf (sha1 in)
+           (path->string file-path)
+           (path->string directory-path)
+           (normalize-filename file-path)
+           datetime
+           datetime))))
+
+(define (handle-pdfs logger config state)
+  (define REPO-PATH (expand-user-path
+                     (hash-ref config "pwlrepo-path")))
+  (define SQLITE-PATH (hash-ref config "sqlite-path"))
+  (define SQLITE-CONN (hash-ref config "sqlite-conn"))
+  (define PDFS (glob (build-path REPO-PATH "**" "*.pdf")))
+
+  ; will be #f is any PDFs cased a non-dupe SQLError
+  (define saved-pdfs?
+    (for/and ([pdf-path PDFS])
+      (equal?
+       'ok
+       (insert-file logger SQLITE-CONN (extract-filedata REPO-PATH pdf-path)))))
+
+  (if saved-pdfs?
+      (append state '("PDFs processed"))
+      '(error "SQLERROR when saving PDFs, check logs")))
+
+(define (process-pdfs logger config state)
+  (if (equal? (car state) 'error)
+      state
+      (handle-pdfs logger config state)))
