@@ -31,17 +31,19 @@
 
 ;; Write log messages to file
 
-(define (start-logger log_path filename)
+(define (start-logger log-path filename)
   (let ([r (make-log-receiver chlogger 'info)]
         [log-date (substring (datetime->iso8601 (now)) 0 10)])
     (set! logger_thread
           (thread
            (lambda ()
-             (let ([log_dir (build-path log_path log-date)])
-               (when (not (directory-exists? log_dir))
-                 (make-directory log_dir))
+             (let ([log-dir (build-path log-path log-date)])
+               (when (not (directory-exists? log-path))
+                 (make-directory log-path))
+               (when (not (directory-exists? log-dir))
+                 (make-directory log-dir))
                (with-output-to-file
-                   (build-path log_path log-date
+                   (build-path log-path log-date
                                (format "~a-~a.log" filename log-date))
                  #:exists 'append
                    (lambda ()
@@ -56,8 +58,8 @@
   (kill-thread logger_thread)
   (start-logger))
 
-(define (launch-log-daemon log_path filename)
-  (start-logger log_path filename)
+(define (launch-log-daemon log-path filename)
+  (start-logger log-path filename)
   (thread
    (lambda ()
      (let loop ()

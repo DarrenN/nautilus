@@ -6,6 +6,7 @@
          racket/path
          threading
          "db-adapter.rkt"
+         "parameters.rkt"
          "structs.rkt")
 
 (provide process-pdfs)
@@ -35,11 +36,11 @@
            datetime
            datetime))))
 
-(define (handle-pdfs logger config state)
+(define (handle-pdfs logger state)
   (define REPO-PATH (expand-user-path
-                     (hash-ref config "pwlrepo-path")))
-  (define SQLITE-PATH (hash-ref config "sqlite-path"))
-  (define SQLITE-CONN (hash-ref config "sqlite-conn"))
+                     (hash-ref (current-config) 'pwlrepo-path)))
+  (define SQLITE-PATH (hash-ref (current-config) 'sqlite-path))
+  (define SQLITE-CONN (hash-ref (current-config) 'sqlite-conn))
   (define PDFS (glob (build-path REPO-PATH "**" "*.pdf")))
 
   ; will be #f is any PDFs cased a non-dupe SQLError
@@ -53,7 +54,7 @@
       (append state '("PDFs processed"))
       '(error "SQLERROR when saving PDFs, check logs")))
 
-(define (process-pdfs logger config state)
+(define (process-pdfs logger state)
   (if (equal? (car state) 'error)
       state
-      (handle-pdfs logger config state)))
+      (handle-pdfs logger state)))

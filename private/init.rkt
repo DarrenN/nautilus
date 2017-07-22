@@ -5,7 +5,8 @@
          "db-adapter.rkt"
          "git.rkt"
          "logger.rkt"
-         "pdf.rkt")
+         "pdf.rkt"
+         "parameters.rkt")
 
 (provide nautilus-go)
 
@@ -40,24 +41,25 @@ General notes
 - messages should be logged at the end
 |#
 
-(define (nautilus-go config)
+(define (nautilus-go)
   ;; Crash if sqlite3 is not available
   (when (not (sqlite3-available?))
     (println "SQLite3 is not available on this system!")
     (exit 1))
 
-  (create-logging-thread (hash-ref config "logfile-path"))
+  (create-logging-thread (hash-ref (current-config) 'logfile-path))
 
-  (define conn (create-connection (hash-ref config "sqlite-path")))
+  (define conn (create-connection (hash-ref (current-config) 'sqlite-path)))
   (create-tables conn)
 
-  (define newconfig (hash-set config "sqlite-conn" conn))
+  (define newconfig (hash-set (current-config) 'sqlite-conn conn))
 
-  (define result
-    (~>> '(ok)
-         (get-repo format-log newconfig)
-         (process-pdfs format-log newconfig)))
+  (parameterize ([current-config newconfig])
+    (define result
+      (~>> '(ok)
+           (get-repo format-log)
+           (process-pdfs format-log)))
 
-  (log-messages result)
-  (sleep 2) ; allow time to flush the log
-  (kill-thread logging-thread))
+    (log-messages result)
+    (sleep 2) ; allow time to flush the log)
+    (kill-thread logging-thread)))

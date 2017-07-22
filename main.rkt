@@ -35,7 +35,8 @@
   (require racket/cmdline
            racket/file
            json
-           "private/init.rkt")
+           "private/init.rkt"
+           "private/parameters.rkt")
 
   (define default-configfile-path
     (build-path (current-directory) ".nautilusrc"))
@@ -50,20 +51,20 @@
           (path->complete-path arg0)
           default-configfile-path)))
 
-  (define default-config
-    (hash "sqlite-path" (build-path (current-directory) "nautilus.db")
-          "pwlrepo-path" (build-path (current-directory) "papers")
-          "pwlrepo-hostname" "github.com"
-          "pwlrepo-repository" "papers-we-love/papers-we-love.git"
-          "logfile-path" (build-path (current-directory) "logs")))
-
-  (define config (make-parameter default-config))
+  (define (hash-merge a b)
+    (for/hash ([key (hash-keys a)])
+      (if (hash-has-key? b key)
+          (values key (hash-ref b key))
+          (values key (hash-ref a key)))))
 
   ;; Read config file and parse into hash
   (define (read-config path)
     (if (and (path? path) (file-exists? path))
-        (call-with-input-file path (λ (in) (read-json in)))
-        (config)))
+        (call-with-input-file path
+          (λ (in)
+            (define json (read-json in))
+            (hash-merge (current-config) json)))
+        (current-config)))
 
-  (parameterize ([config (read-config config-path)])
-    (nautilus-go (config))))
+  (parameterize ([current-config (read-config config-path)])
+    (nautilus-go)))
