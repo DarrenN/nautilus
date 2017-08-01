@@ -52,13 +52,16 @@ General notes
   (define conn (create-connection (hash-ref (current-config) 'sqlite-path)))
   (create-tables conn)
 
-  (define newconfig (hash-set (current-config) 'sqlite-conn conn))
+  ; Append SQLite connection and logger to config hash for use in other modules
+  (define newconfig (~> (current-config)
+                        (hash-set 'sqlite-conn conn)
+                        (hash-set 'logger format-log)))
 
   (parameterize ([current-config newconfig])
     (define result
-      (~>> '(ok)
-           (get-repo format-log)
-           (process-pdfs format-log)))
+      (~> '(ok)
+           get-repo
+           process-pdfs))
 
     (log-messages result)
     (sleep 2) ; allow time to flush the log)

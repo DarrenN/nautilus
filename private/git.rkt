@@ -7,7 +7,7 @@
 (provide get-repo)
 
 ;; Attempt to checkout PWL repo to dest-dir
-(define (checkout-repo logger state)
+(define (checkout-repo state)
   (define hostname (hash-ref (current-config) 'pwlrepo-hostname))
   (define repository (hash-ref (current-config) 'pwlrepo-repository))
   (define dest-dir (hash-ref (current-config) 'pwlrepo-path))
@@ -29,7 +29,7 @@
                 (list (format "Repo ~a/~a checked out" hostname repository)))
         '(error "Did not properly checkout repo!"))))
 
-(define (get-repo logger state)
+(define (get-repo state)
   (if (equal? (car state) 'error)
       state
-      (checkout-repo logger state)))
+      (checkout-repo state)))
