@@ -6,7 +6,8 @@
          "git.rkt"
          "logger.rkt"
          "pdf.rkt"
-         "parameters.rkt")
+         "parameters.rkt"
+         "readmes.rkt")
 
 (provide nautilus-go)
 
@@ -60,8 +61,9 @@ General notes
   (parameterize ([current-config newconfig])
     (define result
       (~> '(ok)
-           get-repo
-           process-pdfs))
+           ;get-repo
+           process-pdfs
+           process-readmes))
 
     (log-messages result)
     (sleep 2) ; allow time to flush the log)

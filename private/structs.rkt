@@ -4,4 +4,4 @@
          (struct-out link))
 
 (struct pdf (sha1 filename directory normalized created modified) #:transparent)
-(struct link (url directory status created modified) #:transparent)
+(struct link (url title directory status created modified) #:transparent)

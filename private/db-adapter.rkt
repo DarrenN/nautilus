@@ -2,6 +2,7 @@
 
 (require db
          racket/dict
+         racket/match
          "structs.rkt")
 
 (provide (all-defined-out))
@@ -122,6 +123,7 @@ tag_id
   (id integer primary key,
    paper_id int,
    url varchar unique not null,
+   title varchar not null,
    directory varchar not null,
    status int not null,
    created varchar,
@@ -143,7 +145,7 @@ tag_id
   "select sha1 from files where sha1 = ?")
 
 (define/prepared-query db-insert-link
-   "insert into links (paper_id, url, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
+  "insert into links (url, title, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
 
 (define/prepared-query db-insert-paper
    "insert into papers (title, year, abstract, venue, directory, created, modified) values (?, ?, ?, ?, ?, ?, ?)")
@@ -161,17 +163,20 @@ tag_id
    "insert into tagspapers (tag_id, paper_id) values (?, ?)")
 
 ;; If the exception isn't due to a dupe sha1 then we need to log the error
-(define (handle-sql-error logger file)
+(define (handle-sql-error logger ds)
   (λ (e)
     (define err (exn:fail:sql-info e))
     (define errcode (dict-ref err 'errcode))
     (define message (dict-ref err 'message))
-    (define filename (pdf-filename file))
+    (define id (match ds
+                 [(struct pdf _) (pdf-filename ds)]
+                 [(struct link _) (link-url ds)]))
+
     (if (not (equal? errcode 2067)) ; 2067 constraint violation
         (begin
           (logger
            "~a"
-           (format "SQLERROR ~a ~a for PDF ~a" errcode message filename))
+           (format "SQLERROR ~a ~a for PDF ~a" errcode message id))
           'fatal)
         'ok)))
 
@@ -186,4 +191,15 @@ tag_id
                     (pdf-normalized file)
                     (pdf-created file)
                     (pdf-modified file))
+    'ok))
+
+(define (insert-link logger conn link)
+  (with-handlers ([exn:fail:sql? (handle-sql-error logger link)])
+    (db-insert-link conn
+                    (link-url link)
+                    (link-title link)
+                    (link-directory link)
+                    (link-status link)
+                    (link-created link)
+                    (link-modified link))
     'ok))
