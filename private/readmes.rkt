@@ -1,9 +1,12 @@
-#lang racket
+#lang racket/base
 
 (require gregor
          file/glob
-         racket/path
          json
+         racket/bool
+         racket/list
+         racket/path
+         racket/port
          "db-adapter.rkt"
          "parameters.rkt"
          "structs.rkt")
@@ -17,14 +20,22 @@
 (define (timestamp)
   (datetime->iso8601 (now/utc)))
 
-;; extract only non-pwl web links from text
-(define (parse-link-match match)
-  (define url (last match))
-  (define title (second match))
-  (if (regexp-match re-has-http url)
-      (list title url)
-      #f))
+(define not-false (compose not false?))
 
+;; extract only non-pwl web links from text
+(define (parse-links matches)
+  (filter
+   not-false
+   (for/list ([match matches])
+     (define url (last match))
+     (define title (first match))
+     (if (and
+          (not (equal? title ":scroll:"))
+          (regexp-match re-has-http url))
+         (list title url)
+         #f))))
+
+;; Returns a list of link structs from README markdown
 (define (parse-readme repo-path path)
   (call-with-input-file path #:mode 'text
     (λ (in)
@@ -33,13 +44,16 @@
         (split-path (find-relative-path repo-path path)))
       (define text (port->string in))
       (define datetime (timestamp))
-      (define match (regexp-match re-markdown-link text))
+      (define match (regexp-match* re-markdown-link text #:match-select cdr))
       (define parsed
         (if (list? match)
-            (parse-link-match match)
+            (parse-links match)
             #f))
       (if parsed
-          (link (last parsed) (first parsed) (path->string directory-path) 0 datetime datetime)
+          (for/list ([p parsed]
+                     #:when p)
+            (link (last p) (first p) (path->string directory-path)
+                  0 datetime datetime))
           #f))))
 
 (define (handle-readmes state)
@@ -52,16 +66,17 @@
 
   (define parsed-readmes
     (filter
-     (λ (x) x)
+     not-false
      (for/list ([readme-path READMES])
        (parse-readme REPO-PATH readme-path))))
 
   ; will be #f is any PDFs cased a non-dupe SQLError
   (define saved-readmes?
-    (for/and ([readme parsed-readmes])
-      (equal?
-       'ok
-       (insert-link LOGGER SQLITE-CONN readme))))
+    (for/and ([insert (flatten
+                       (for/list ([readme parsed-readmes])
+                         (for/list ([r readme])
+                           (insert-link LOGGER SQLITE-CONN r))))])
+      (equal? 'ok insert)))
 
   (if saved-readmes?
       (append state '("READMEs processed"))
