@@ -1,6 +1,7 @@
-#lang racket
+#lang racket/base
 
-(require gregor)
+(require racket/match
+         gregor)
 
 (provide format-log
          launch-log-daemon)

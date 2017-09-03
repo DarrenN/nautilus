@@ -1,9 +1,10 @@
-#lang racket
+#lang racket/base
 
 (require file/glob
          gregor
          openssl/sha1
          racket/path
+         racket/string
          threading
          "db-adapter.rkt"
          "parameters.rkt"

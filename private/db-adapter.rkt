@@ -1,8 +1,12 @@
-#lang racket
+#lang racket/base
 
 (require db
          racket/dict
          racket/match
+         racket/function
+         (for-syntax racket/base
+                     racket/syntax
+                     db)
          "structs.rkt")
 
 (provide (all-defined-out))
