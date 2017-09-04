@@ -6,6 +6,7 @@
          "git.rkt"
          "logger.rkt"
          "pdf.rkt"
+         "papers.rkt"
          "parameters.rkt"
          "readmes.rkt")
 
@@ -61,9 +62,10 @@ General notes
   (parameterize ([current-config newconfig])
     (define result
       (~> '(ok)
-           ;get-repo
-           process-pdfs
-           process-readmes))
+          ;get-repo
+          process-pdfs
+          process-readmes
+          process-papers))
 
     (log-messages result)
     (sleep 2) ; allow time to flush the log)

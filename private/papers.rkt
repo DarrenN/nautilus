@@ -35,6 +35,8 @@
 
 (define (update-authors pr)
   (define-values (pid record) (get-values pr))
+  (define logger (hash-ref (current-config) 'logger))
+  (define conn (hash-ref (current-config) 'sqlite-conn))
 
   (define result
     (match record
@@ -44,22 +46,17 @@
   (define structured-authors (hash-ref result 'structuredAuthors))
   (define authors (hash-ref result 'authors))
 
-  ;; if no structure-authors then fall back on authors
+  ;; TODO: if no structure-authors then fall back on authors
 
   (for ([sauthor structured-authors])
     (define-values (firstName middleName lastName)
       (match sauthor
         [(hash-table ('firstName a) ('middleNames b) ('lastName c))
          (values a (string-join b) c)]))
-
     (define name (string-normalize-spaces
                   (string-join (list firstName middleName lastName))))
-
     (define a (author name firstName middleName lastName))
-
-    (printf "update-authors: insert ~a joined to paper ~a\n" a pid))
-
-  ;;
+    (insert-and-join-author logger conn a pid))
 
   (list pid record))
 
