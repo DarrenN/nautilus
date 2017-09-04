@@ -59,7 +59,6 @@
 (define (handle-readmes state)
   (define REPO-PATH (expand-user-path
                      (hash-ref (current-config) 'pwlrepo-path)))
-  (define SQLITE-PATH (hash-ref (current-config) 'sqlite-path))
   (define SQLITE-CONN (hash-ref (current-config) 'sqlite-conn))
   (define LOGGER (hash-ref (current-config) 'logger))
   (define READMES (glob (build-path REPO-PATH "**" "README.md")))

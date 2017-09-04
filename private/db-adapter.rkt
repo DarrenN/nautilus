@@ -77,7 +77,7 @@ tag_id
    conn
    "CREATE TABLE IF NOT EXISTS papers
   (id integer primary key,
-   title varchar,
+   title varchar unique not null,
    year int,
    abstract varchar,
    venue varchar,
@@ -92,8 +92,15 @@ tag_id
    name varchar not null,
    first_name varchar,
    middle_name varchar,
-   last_name varchar,
-   paper_id int not null);")
+   last_name varchar);")
+
+  ; join table for tags <--> papers
+  (query-exec
+   conn
+   "CREATE TABLE IF NOT EXISTS authorspapers
+  (id integer primary key,
+   author_id integer not null,
+   paper_id integer not null);")
 
   (query-exec
    conn
@@ -151,6 +158,12 @@ tag_id
 (define/prepared-query db-insert-link
   "insert into links (url, title, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
 
+(define (db-select-links conn)
+  (query conn "select * from links WHERE paper_id IS NULL ORDER BY directory"))
+
+(define (db-select-files conn)
+  (query conn "select * from files WHERE paper_id is NULL ORDER BY directory"))
+
 (define/prepared-query db-insert-paper
    "insert into papers (title, year, abstract, venue, directory, created, modified) values (?, ?, ?, ?, ?, ?, ?)")
 
@@ -207,3 +220,26 @@ tag_id
                     (link-created link)
                     (link-modified link))
     'ok))
+
+(define (get-insert-id q)
+  (define info (simple-result-info q))
+  (define insert-id (dict-ref info 'insert-id))
+  (if (and (integer? insert-id)
+           (positive? insert-id))
+      insert-id
+      '()))
+
+(define (insert-paper logger conn paper)
+  (with-handlers ([exn:fail:sql? (handle-sql-error logger paper)])
+    (define q  (db-insert-paper
+                conn
+                (paper-title paper)
+                (paper-year paper)
+                (paper-abstract paper)
+                (paper-venue paper)
+                (paper-directory paper)
+                (paper-created paper)
+                (paper-modified paper)))
+    (if (simple-result? q)
+        (get-insert-id q)
+        '())))
