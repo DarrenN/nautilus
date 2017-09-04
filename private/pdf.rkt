@@ -1,19 +1,16 @@
 #lang racket/base
 
 (require file/glob
-         gregor
          openssl/sha1
          racket/path
          racket/string
          threading
          "db-adapter.rkt"
          "parameters.rkt"
-         "structs.rkt")
+         "structs.rkt"
+         "utils.rkt")
 
 (provide process-pdfs)
-
-(define (timestamp)
-  (datetime->iso8601 (now/utc)))
 
 (define (normalize-filename file-path)
   (~> file-path

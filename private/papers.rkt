@@ -1,13 +1,14 @@
 #lang racket/base
 
 (require db
-         gregor
          racket/match
+         racket/string
          threading
          "db-adapter.rkt"
          "parameters.rkt"
          "semanticscholar.rkt"
-         "structs.rkt")
+         "structs.rkt"
+         "utils.rkt")
 
 (provide process-papers)
 
@@ -16,26 +17,63 @@
 
 ; (struct paper (title year abstract venue directory created modified) #:transparent)
 
-(define (timestamp)
-  (datetime->iso8601 (now/utc)))
-
-(define (get-values xs)
-  (match xs
-    [(list a b) (values a b)]))
-
 (define (update-source pr)
   (define-values (pid record) (get-values pr))
-  (printf "update-source: ~a ~a\n" pid record)
+
+  (define entity-id
+    (match record
+      [(struct link-paper _) (link-paper-id record)]
+      [(struct file-paper _) (file-paper-id record)]))
+
+  (if (link-paper? record)
+      (printf "update-source: update link id ~a with paper_id ~a\n"
+              entity-id pid)
+      (printf "update-source: update file id ~a with paper_id ~a\n"
+              entity-id pid))
+
   (list pid record))
 
 (define (update-authors pr)
   (define-values (pid record) (get-values pr))
-  (printf "update-authors: ~a ~a\n" pid record)
+
+  (define result
+    (match record
+      [(struct link-paper _) (link-paper-result record)]
+      [(struct file-paper _) (file-paper-result record)]))
+
+  (define structured-authors (hash-ref result 'structuredAuthors))
+  (define authors (hash-ref result 'authors))
+
+  ;; if no structure-authors then fall back on authors
+
+  (for ([sauthor structured-authors])
+    (define-values (firstName middleName lastName)
+      (match sauthor
+        [(hash-table ('firstName a) ('middleNames b) ('lastName c))
+         (values a (string-join b) c)]))
+
+    (define name (string-normalize-spaces
+                  (string-join (list firstName middleName lastName))))
+
+    (define a (author name firstName middleName lastName))
+
+    (printf "update-authors: insert ~a joined to paper ~a\n" a pid))
+
+  ;;
+
   (list pid record))
 
 (define (update-tags pr)
   (define-values (pid record) (get-values pr))
-  (printf "update-tags: ~a ~a\n" pid record)
+
+  (define tags
+    (match record
+      [(struct link-paper _) (hash-ref (link-paper-result record) 'tags)]
+      [(struct file-paper _) (hash-ref (file-paper-result record) 'tags)]))
+
+  (for ([tag tags])
+    (printf "update-tags: insert ~a joined to paper ~a\n" tag pid))
+
   (list pid record))
 
 (define (pipeline-inserts pr)

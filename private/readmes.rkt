@@ -1,15 +1,14 @@
 #lang racket/base
 
-(require gregor
-         file/glob
+(require file/glob
          json
-         racket/bool
          racket/list
          racket/path
          racket/port
          "db-adapter.rkt"
          "parameters.rkt"
-         "structs.rkt")
+         "structs.rkt"
+         "utils.rkt")
 
 (provide process-readmes)
 
@@ -17,15 +16,10 @@
 (define re-has-http #rx"^(http)")
 (define re-has-pwl #rx"(https://github.com/papers-we-love)")
 
-(define (timestamp)
-  (datetime->iso8601 (now/utc)))
-
-(define not-false (compose not false?))
-
 ;; extract only non-pwl web links from text
 (define (parse-links matches)
   (filter
-   not-false
+   not-false?
    (for/list ([match matches])
      (define url (last match))
      (define title (first match))
@@ -65,7 +59,7 @@
 
   (define parsed-readmes
     (filter
-     not-false
+     not-false?
      (for/list ([readme-path READMES])
        (parse-readme REPO-PATH readme-path))))
 

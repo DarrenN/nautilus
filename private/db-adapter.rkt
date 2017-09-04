@@ -89,7 +89,7 @@ tag_id
    conn
    "CREATE TABLE IF NOT EXISTS authors
   (id integer primary key,
-   name varchar not null,
+   name varchar unique not null,
    first_name varchar,
    middle_name varchar,
    last_name varchar);")
@@ -152,11 +152,17 @@ tag_id
 (define/prepared-query db-insert-file
   "insert into files (sha1, filename, directory, normalized, created, modified) values (?, ?, ?, ?, ?, ?)")
 
+(define/prepared-query db-update-file-paper-id
+  "update files set paper_id = ? where id = ? ")
+
 (define/prepared-query db-select-file-sha1
   "select sha1 from files where sha1 = ?")
 
 (define/prepared-query db-insert-link
   "insert into links (url, title, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
+
+(define/prepared-query db-update-link-paper-id
+  "update links set paper_id = ? where id = ? ")
 
 (define (db-select-links conn)
   (query conn "select * from links WHERE paper_id IS NULL ORDER BY directory"))
@@ -179,7 +185,7 @@ tag_id
 (define/prepared-query db-insert-tagpaper
    "insert into tagspapers (tag_id, paper_id) values (?, ?)")
 
-;; If the exception isn't due to a dupe sha1 then we need to log the error
+;; If the exception isn't due to a dupe unique val then we need to log the error
 (define (handle-sql-error logger ds)
   (λ (e)
     (define err (exn:fail:sql-info e))
@@ -189,7 +195,7 @@ tag_id
                  [(struct pdf _) (pdf-filename ds)]
                  [(struct link _) (link-url ds)]))
 
-    (if (not (equal? errcode 2067)) ; 2067 constraint violation
+    (if (not (equal? errcode 2067)) ; 2067 constraint violation (duplicate)
         (begin
           (logger
            "~a"
@@ -243,3 +249,26 @@ tag_id
     (if (simple-result? q)
         (get-insert-id q)
         '())))
+
+;; If the exception isn't due to a dupe sha1 then we need to log the error
+(define (handle-unique-author logger author pid)
+  (λ (e)
+    (define err (exn:fail:sql-info e))
+    (define errcode (dict-ref err 'errcode))
+    (define message (dict-ref err 'message))
+    (define id (author-name author))
+
+    (if (not (equal? errcode 2067)) ; 2067 constraint violation (duplicate)
+        (begin
+          (logger
+           "~a"
+           (format "SQLERROR ~a ~a for PDF ~a" errcode message id))
+          'fatal)
+        'ok)))
+
+
+;; if insert fails then get author id and make join
+;; otherwise make join with returned id
+(define (insert-and-join-author logger conn author pid)
+  (with-handlers ([exn:fail:sql? (handle-unique-author logger author pid)])
+    (printf "hello\n")))
