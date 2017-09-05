@@ -38,12 +38,14 @@
   (define authors (hash-ref result 'authors))
 
   ;; TODO: if no structure-authors then fall back on authors
+  ;; NOTE: all name fields are run through string-titlecase
 
   (for ([sauthor structured-authors])
     (define-values (firstName middleName lastName)
       (match sauthor
         [(hash-table ('firstName a) ('middleNames b) ('lastName c))
-         (values a (string-join b) c)]))
+         (values (string-titlecase a) (string-titlecase (string-join b))
+                 (string-titlecase c))]))
     (define name (string-normalize-spaces
                   (string-join (list firstName middleName lastName))))
     (define a (author name firstName middleName lastName))
@@ -57,8 +59,10 @@
   (define conn (hash-ref (current-config) 'sqlite-conn))
   (define tags (hash-ref (result-record-result record) 'tags))
 
+  ;; NOTE: all tags should be lowercased!
+
   (for ([t tags])
-    (insert-and-join-tag logger conn (tag t) pid))
+    (insert-and-join-tag logger conn (tag (string-downcase t)) pid))
 
   (list pid record))
 

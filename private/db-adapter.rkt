@@ -80,24 +80,53 @@ SELECT links.url, papers.title
 FROM links
 INNER JOIN papers ON papers.id = links.paper_id;
 
-SELECT papers.title, authors.name, tags.tag
+SELECT
+    papers.title,
+    group_concat(DISTINCT authors.name),
+    group_concat(DISTINCT tags.tag)
 FROM papers
-INNER JOIN authorspapers AS ap ON ap.paper_id = papers.id
-INNER JOIN authors ON authors.id = ap.author_id
-INNER JOIN tagspapers AS tp ON tp.paper_id = papers.id
-INNER JOIN tags ON tags.id = tp.tag_id;
+JOIN authorspapers AS ap ON ap.paper_id = papers.id
+JOIN authors ON authors.id = ap.author_id
+JOIN tagspapers AS tp ON tp.paper_id = papers.id
+JOIN tags ON tags.id = tp.tag_id
+GROUP BY papers.title;
 
-SELECT m.name, cp.id_category
-FROM manufacturer as m
-INNER JOIN product as p
-    ON m.id_manufacturer = p.id_manufacturer
-INNER JOIN category_product as cp
-    ON p.id_product = cp.id_product
+; with links/files information
 
-SELECT ps.title, ap.author_id
-FROM papers AS ps
-INNER JOIN authorspapers AS ap
-    ON ps.id = ap.paper_id;
+SELECT
+    papers.title,
+    links.url,
+    '/' || files.directory || files.filename,
+    group_concat(DISTINCT authors.name),
+    group_concat(DISTINCT tags.tag)
+FROM papers
+JOIN links ON links.paper_id = papers.id
+JOIN files ON files.paper_id = papers.id
+JOIN authorspapers AS ap ON ap.paper_id = papers.id
+JOIN authors ON authors.id = ap.author_id
+JOIN tagspapers AS tp ON tp.paper_id = papers.id
+JOIN tags ON tags.id = tp.tag_id
+GROUP BY papers.title;
+
+; counts of papers to tag
+
+SELECT
+  tags.tag,
+  count(papers.id)
+FROM papers
+JOIN tagspapers AS tp ON tp.paper_id = papers.id
+JOIN tags ON tags.id = tp.tag_id
+GROUP BY tags.tag;
+
+; counts of papers to author
+
+SELECT
+  authors.name,
+  count(papers.id)
+FROM papers
+JOIN authorspapers AS ap ON ap.paper_id = papers.id
+JOIN authors ON authors.id = ap.author_id
+GROUP BY authors.name;
 
 |#
 
