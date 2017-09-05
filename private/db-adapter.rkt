@@ -67,6 +67,40 @@ tag_id
 
 |#
 
+#|
+
+Scratch queries
+===============
+
+SELECT files.filename, papers.title
+FROM files
+INNER JOIN papers ON papers.id = files.paper_id;
+
+SELECT links.url, papers.title
+FROM links
+INNER JOIN papers ON papers.id = links.paper_id;
+
+SELECT papers.title, authors.name, tags.tag
+FROM papers
+INNER JOIN authorspapers AS ap ON ap.paper_id = papers.id
+INNER JOIN authors ON authors.id = ap.author_id
+INNER JOIN tagspapers AS tp ON tp.paper_id = papers.id
+INNER JOIN tags ON tags.id = tp.tag_id;
+
+SELECT m.name, cp.id_category
+FROM manufacturer as m
+INNER JOIN product as p
+    ON m.id_manufacturer = p.id_manufacturer
+INNER JOIN category_product as cp
+    ON p.id_product = cp.id_product
+
+SELECT ps.title, ap.author_id
+FROM papers AS ps
+INNER JOIN authorspapers AS ap
+    ON ps.id = ap.paper_id;
+
+|#
+
 (define DEFAULT-DB "nautilus-test.db")
 
 (define (create-connection [dbname DEFAULT-DB])

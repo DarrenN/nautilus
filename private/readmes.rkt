@@ -14,6 +14,7 @@
 
 (define re-markdown-link #rx"\\[(.*?)\\]\\((.*?)\\)")
 (define re-has-http #rx"^(http)")
+(define re-has-youtube #rx"^(youtube)")
 (define re-has-pwl #rx"(https://github.com/papers-we-love)")
 
 ;; extract only non-pwl web links from text
@@ -25,6 +26,7 @@
      (define title (first match))
      (if (and
           (not (equal? title ":scroll:"))
+          (not (regexp-match re-has-youtube url))
           (regexp-match re-has-http url))
          (list title url)
          #f))))
@@ -38,7 +40,8 @@
         (split-path (find-relative-path repo-path path)))
       (define text (port->string in))
       (define datetime (timestamp))
-      (define match (regexp-match* re-markdown-link text #:match-select cdr))
+      (define match (regexp-match* re-markdown-link text
+                                   #:match-select cdr))
       (define parsed
         (if (list? match)
             (parse-links match)

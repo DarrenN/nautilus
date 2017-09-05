@@ -51,10 +51,12 @@ General notes
 
   (create-logging-thread (hash-ref (current-config) 'logfile-path))
 
-  (define conn (create-connection (hash-ref (current-config) 'sqlite-path)))
+  (define conn (create-connection (hash-ref (current-config)
+                                            'sqlite-path)))
   (create-tables conn)
 
-  ; Append SQLite connection and logger to config hash for use in other modules
+  ; Append SQLite connection and logger to config hash for use
+  ; in other modules
   (define newconfig (~> (current-config)
                         (hash-set 'sqlite-conn conn)
                         (hash-set 'logger format-log)))
@@ -62,7 +64,7 @@ General notes
   (parameterize ([current-config newconfig])
     (define result
       (~> '(ok)
-          get-repo
+          ;get-repo
           process-pdfs
           process-readmes
           process-papers))
