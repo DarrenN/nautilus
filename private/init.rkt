@@ -62,7 +62,7 @@ General notes
   (parameterize ([current-config newconfig])
     (define result
       (~> '(ok)
-          ;get-repo
+          get-repo
           process-pdfs
           process-readmes
           process-papers))

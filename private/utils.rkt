@@ -17,3 +17,7 @@
 
 ;; Predicate for use in filter, etc
 (define not-false? (compose not false?))
+
+;; Get last item in vector
+(define (vector-last v)
+  (vector-ref v (- (vector-length v) 1)))

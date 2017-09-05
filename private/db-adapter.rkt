@@ -151,46 +151,27 @@ tag_id
 ; (define/prepared-query insert-tag ...) -> (insert-tag "foo")
 
 (define/prepared-query db-insert-file
-  "insert into files (sha1, filename, directory, normalized, created, modified) values (?, ?, ?, ?, ?, ?)")
+  "INSERT OR IGNORE INTO files (sha1, filename, directory, normalized, created, modified) values (?, ?, ?, ?, ?, ?)")
 
 (define/prepared-query db-update-file-paper-id
-  "update files set paper_id = ? where id = ? ")
+  "UPDATE files SET paper_id = ? WHERE id = ?")
+
+(define/prepared-query db-update-link-paper-id
+  "UPDATE links SET paper_id = ? WHERE id = ?")
 
 (define/prepared-query db-select-file-sha1
   "select sha1 from files where sha1 = ?")
 
 (define/prepared-query db-insert-link
-  "insert into links (url, title, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
+  "INSERT OR IGNORE INTO links (url, title, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
 
-(define/prepared-query db-update-link-paper-id
-  "update links set paper_id = ? where id = ? ")
-
+;; Only pull entries where paper_id is NULL
 (define (db-select-links conn)
   (query conn "select * from links WHERE paper_id IS NULL ORDER BY directory"))
 
+;; Only pull entries where paper_id is NULL
 (define (db-select-files conn)
   (query conn "select * from files WHERE paper_id is NULL ORDER BY directory"))
-
-(define/prepared-query db-insert-paper
-   "insert into papers (title, year, abstract, venue, directory, created, modified) values (?, ?, ?, ?, ?, ?, ?)")
-
-(define/prepared-query db-select-paper
-   "select id from papers where title = ?")
-
-(define/prepared-query db-insert-author
-  "insert into authors (name, first_name, middle_name, last_name) values (?, ?, ?, ?)")
-
-(define/prepared-query dp-select-author-by-name
-  "select id from authors where name = ?")
-
-(define/prepared-query db-insert-authorspapers
-  "insert into authorspapers (paper_id, author_id) values (?, ?)")
-
-(define/prepared-query db-insert-tag
-   "insert into tags (tag) values (?)")
-
-(define/prepared-query db-insert-tagpaper
-   "insert into tagspapers (tag_id, paper_id) values (?, ?)")
 
 ;; If the exception isn't due to a dupe unique val then we need to log the error
 (define (handle-sql-error logger ds)
@@ -202,15 +183,16 @@ tag_id
                  [(struct pdf _) (pdf-filename ds)]
                  [(struct link _) (link-url ds)]
                  [(struct author _) (author-name ds)]
-                 [(struct paper _) (paper-title ds)]))
+                 [(struct paper _) (paper-title ds)]
+                 [(struct tag _) (tag-tag ds)]
+                 [(struct result-record _)
+                  (format "~a ~a" (result-record-type ds)
+                          (result-record-id ds))]))
 
-    (if (not (equal? errcode 2067)) ; 2067 constraint violation (duplicate)
-        (begin
-          (logger
-           "~a"
-           (format "SQLERROR ~a ~a for PDF ~a" errcode message id))
-          'fatal)
-        'ok)))
+    (logger "~a" (format "SQLERROR ~a ~a for ~a ~a"
+                         errcode message (object-name ds) id))
+
+    'fatal))
 
 ; We attempt to insert everything, SQLite will throw an exception for duplicate
 ; sha1 fields which we mostly ignore
@@ -236,6 +218,14 @@ tag_id
                     (link-modified link))
     'ok))
 
+(define (update-file-paperid logger conn record pid)
+  (with-handlers ([exn:fail:sql? (handle-sql-error logger record)])
+    (db-update-file-paper-id conn pid (result-record-id record))))
+
+(define (update-link-paperid logger conn record pid)
+  (with-handlers ([exn:fail:sql? (handle-sql-error logger record)])
+    (db-update-link-paper-id conn pid (result-record-id record))))
+
 (define (get-insert-id q)
   (define info (simple-result-info q))
   (define insert-id (dict-ref info 'insert-id))
@@ -243,118 +233,3 @@ tag_id
            (positive? insert-id))
       insert-id
       '()))
-
-(define (fetch-paper-id logger conn paper)
-  (with-handlers ([exn:fail:sql? (handle-sql-error logger paper)])
-    (define q (query-rows conn "select id from papers where title = $1"
-                          (paper-title paper)))
-    (if (not (null? q))
-        (vector-ref (car q) 0)
-        '())))
-
-;; If the papers exists return the paper's id
-(define (handle-dupe-paper logger conn paper)
-  (λ (e)
-    (define err (exn:fail:sql-info e))
-    (define errcode (dict-ref err 'errcode))
-    (define message (dict-ref err 'message))
-    (define title (paper-title paper))
-
-    (if (not (equal? errcode 2067)) ; 2067 constraint violation (duplicate)
-        (begin
-          (logger
-           "~a"
-           (format "SQLERROR ~a ~a for PAPER ~a" errcode message title))
-          'fatal)
-        (fetch-paper-id logger conn paper))))
-
-(define (insert-paper logger conn paper)
-  (with-handlers ([exn:fail:sql? (handle-dupe-paper logger conn paper)])
-    (define q  (db-insert-paper
-                conn
-                (paper-title paper)
-                (paper-year paper)
-                (paper-abstract paper)
-                (paper-venue paper)
-                (paper-directory paper)
-                (paper-created paper)
-                (paper-modified paper)))
-    (if (simple-result? q)
-        (get-insert-id q)
-        '())))
-
-;; If the exception isn't due to a dupe sha1 then we need to log the error
-(define (handle-unique-author logger conn author pid)
-  (λ (e)
-    (define err (exn:fail:sql-info e))
-    (define errcode (dict-ref err 'errcode))
-    (define message (dict-ref err 'message))
-    (define id (author-name author))
-    (define aid (fetch-author-id logger conn author))
-
-    (if (not (equal? errcode 2067)) ; 2067 constraint violation (duplicate)
-        (begin
-          (logger
-           "~a"
-           (format "SQLERROR ~a ~a for AUTHOR ~a" errcode message id))
-          'fatal)
-        (begin
-          (if (not (null? aid))
-              (insert-author-join logger conn author pid aid)
-              (begin
-                (logger
-                 "~a"
-                 (format "SQLERROR: NOT EXISTS ~a ~a for AUTHOR ~a"
-                         errcode message id))
-                'fatal))))))
-
-(define (fetch-author-id logger conn author)
-  (with-handlers ([exn:fail:sql? (handle-sql-error logger author)])
-    (define q (query-rows conn "select id from authors where name = $1"
-                          (author-name author)))
-    (if (not (null? q))
-        (vector-ref (car q) 0)
-        '())))
-
-(define (insert-author-join logger conn author pid aid)
-  (with-handlers ([exn:fail:sql? (handle-sql-error logger author)])
-
-    ;; check for existing joins
-    (define join-rows
-      (query-rows
-       conn
-       "select paper_id, author_id from authorspapers where paper_id = $1 and author_id = $2"
-       pid aid))
-
-    ;; only insert joins if the join doesn't already exist
-    (define q (if (null? join-rows)
-                  (db-insert-authorspapers conn pid aid)
-                  join-rows))
-
-    (if (simple-result? q)
-        (get-insert-id q)
-        '())))
-
-;; if insert fails then get author id and make join
-;; otherwise make join with returned id
-(define (insert-and-join-author logger conn author pid)
-  (with-handlers ([exn:fail:sql? (handle-unique-author logger conn author pid)])
-    ;"insert into authors (paper_id, name, first_name, middle_name, last_name)"
-    (define q (db-insert-author
-               conn
-               (author-name author)
-               (author-first_name author)
-               (author-middle_name author)
-               (author-last_name author)))
-
-    (define insert-id (if (simple-result? q)
-                          (get-insert-id q)
-                          '()))
-
-    (define aid (if (null? insert-id)
-                    (fetch-author-id logger conn author)
-                    insert-id))
-
-    (if (simple-result? q)
-        (insert-author-join logger conn author pid aid)
-        '())))
