@@ -5,6 +5,6 @@
 compiled/
 /doc/
 .nautilusrc
-nautilus.db
+*.db
 logs/
 papers/
