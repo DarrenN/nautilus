@@ -72,13 +72,18 @@ tag_id
 Scratch queries
 ===============
 
-SELECT files.filename, papers.title
-FROM files
-INNER JOIN papers ON papers.id = files.paper_id;
+; all papers with links and files
 
-SELECT links.url, papers.title
+SELECT papers.title, '/' || files.directory || files.filename
+FROM files
+INNER JOIN papers ON papers.id = files.paper_id
+UNION
+SELECT papers.title, links.url
 FROM links
-INNER JOIN papers ON papers.id = links.paper_id;
+INNER JOIN papers ON papers.id = links.paper_id
+GROUP BY papers.title;
+
+; papers with authors and tags
 
 SELECT
     papers.title,
