@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require net/git-checkout
+         racket/port
          racket/system
          threading
          "logger.rkt"
@@ -9,6 +10,8 @@
 
 (provide get-repo
          push-repo)
+
+(define re-commit-clean #rx"working tree clean")
 
 ;; Attempt to checkout PWL repo to dest-dir
 (define (checkout-repo logger state)
@@ -45,6 +48,28 @@
                              dest-dir))
         '(error "Did not properly checkout repo!"))))
 
+(define (check-clean logger tmp-branch cmd state)
+  (if (regexp-match
+         re-commit-clean
+         (with-output-to-string (lambda () (system cmd))))
+        (logger "~a" (format "GITBRANCH ~a CLEAN! - NO MERGE" tmp-branch))
+        (logger "~a" (format "GITBRANCH ~a ERROR! - NO MERGE" tmp-branch)))
+  (append state
+          (list (format "Branch ~a not merged" tmp-branch))))
+
+(define (merge-push-delete logger tmp-branch dest-dir cmds state)
+  (define cmd-result
+    (for/and ([cmd cmds])
+      (system cmd)))
+  (if cmd-result
+      (begin
+        (append state (list (format "Branch ~a/~a merged and branch deleted"
+                                    tmp-branch))))
+      (begin
+        (logger "~a" (format "GITERR ~a MERGE / PUSH PROBLEM IN ~a" tmp-branch
+                             dest-dir))
+        '(error "Could not properly merge/cleanup repo"))))
+
 (define (push-and-close-repo state)
   (define hostname (hash-ref (current-config) 'pwlrepo-hostname))
   (define repository (hash-ref (current-config) 'pwlrepo-repository))
@@ -52,27 +77,21 @@
   (define logger (hash-ref (current-config) 'logger))
   (define tmp-branch (hash-ref (current-config) 'tmp-branch))
 
-  (define cmd-add-all "git add .")
+  (define cmd-add-all "git add .") ; always #t
   (define cmd-commit (format "git commit -a -m 'nautilus.db from branch ~a'"
-                             tmp-branch))
+                             tmp-branch)) ; get string and check it
   (define cmd-merge (format "git checkout master; git merge ~a" tmp-branch))
   (define cmd-push "git push")
   (define cmd-delete (format "git branch -D ~a" tmp-branch))
 
-  (define cmd-result
-    (for/and ([cmd (list cmd-add-all cmd-commit cmd-merge cmd-push cmd-delete)])
-      (system cmd)))
+  (system cmd-add-all) ;; add always returns #t
 
-  (if cmd-result
-      (begin
-        (logger "~a" (format "GITBRANCH ~a MERGED / DELETED" tmp-branch))
-        (append state
-                (list (format "Repo ~a/~a merged and branch deleted"
-                              hostname repository))))
-      (begin
-        (logger "~a" (format "GITERR ~a MERGE / PUSH PROBLEM IN ~a" tmp-branch
-                             dest-dir))
-        '(error "Could not properly merge/cleanup repo"))))
+  (define did-commit? (system cmd-commit)) ;; try to commit
+
+  (if did-commit?
+      (merge-push-delete logger tmp-branch dest-dir
+                         (list cmd-merge cmd-push cmd-delete) state)
+      (check-clean logger tmp-branch cmd-commit state)))
 
 (define (get-repo logger state)
   (if (equal? (car state) 'error)
