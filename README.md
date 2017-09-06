@@ -16,6 +16,16 @@ $ raco pkg install
 $ raco exe -o nautilus main.rkt
 ```
 
+### Generate documentation
+
+The docs go more in depth into how to setup Nautilus and how the DB is structured. You probably want to read them:
+
+```
+$ cd scribblings
+$ raco scribble +m nautilus.scrbl
+$ open nautilus.html
+```
+
 ### Config file
 
 1. Copy `nautliusrc.template` to `.nautliusrc`
