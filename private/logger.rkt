@@ -39,26 +39,24 @@
 (define (start-logger log-path filename)
   (let* ([r (make-log-receiver chlogger 'info)]
          [log-date (substring (datetime->iso8601 (now)) 0 10)]
-         [log-file-path (build-path log-path log-date
-                               (format "~a-~a.log" filename log-date))])
+         [log-file-path (build-path
+                         log-path
+                         (format "~a-~a.log" filename log-date))])
     (set! current-log-file log-file-path)
     (set! logger_thread
           (thread
            (lambda ()
-             (let ([log-dir (build-path log-path log-date)])
-               (when (not (directory-exists? log-path))
-                 (make-directory log-path))
-               (when (not (directory-exists? log-dir))
-                 (make-directory log-dir))
-               (with-output-to-file log-file-path
-                 #:exists 'append
-                   (lambda ()
-                     (let loop ()
-                       (match (sync r)
-                         [(vector l m v v1)
-                          (printf "~a\n" m)
-                          (flush-output)])
-                       (loop))))))))))
+              (when (not (directory-exists? log-path))
+                (make-directory log-path))
+              (with-output-to-file log-file-path
+                #:exists 'append
+                (lambda ()
+                  (let loop ()
+                    (match (sync r)
+                      [(vector l m v v1)
+                       (printf "~a\n" m)
+                       (flush-output)])
+                    (loop)))))))))
 
 (define (restart-logger)
   (kill-thread logger_thread)
