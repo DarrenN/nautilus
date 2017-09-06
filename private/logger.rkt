@@ -4,7 +4,8 @@
          gregor)
 
 (provide format-log
-         launch-log-daemon)
+         launch-log-daemon
+         get-current-log-file)
 
 ;; logging
 
@@ -12,6 +13,7 @@
 (define rc (make-log-receiver chlogger 'info))
 
 (define logger_thread #f)
+(define current-log-file "")
 
 ;; Log listener for debug purposes. Should turn this off.
 #|
@@ -26,6 +28,8 @@
 |#
 (current-logger chlogger)
 
+(define (get-current-log-file) current-log-file)
+
 (define (format-log fmt . msg)
   (log-info fmt (string-append (datetime->iso8601 (now))
                                " " (apply format (cons fmt msg)))))
@@ -33,8 +37,11 @@
 ;; Write log messages to file
 
 (define (start-logger log-path filename)
-  (let ([r (make-log-receiver chlogger 'info)]
-        [log-date (substring (datetime->iso8601 (now)) 0 10)])
+  (let* ([r (make-log-receiver chlogger 'info)]
+         [log-date (substring (datetime->iso8601 (now)) 0 10)]
+         [log-file-path (build-path log-path log-date
+                               (format "~a-~a.log" filename log-date))])
+    (set! current-log-file log-file-path)
     (set! logger_thread
           (thread
            (lambda ()
@@ -43,9 +50,7 @@
                  (make-directory log-path))
                (when (not (directory-exists? log-dir))
                  (make-directory log-dir))
-               (with-output-to-file
-                   (build-path log-path log-date
-                               (format "~a-~a.log" filename log-date))
+               (with-output-to-file log-file-path
                  #:exists 'append
                    (lambda ()
                      (let loop ()

@@ -260,7 +260,7 @@ GROUP BY authors.name;
     (logger "~a" (format "SQLERROR ~a ~a for ~a ~a"
                          errcode message (object-name ds) id))
 
-    'fatal))
+    'error))
 
 ; We attempt to insert everything, SQLite will throw an exception for duplicate
 ; sha1 fields which we mostly ignore

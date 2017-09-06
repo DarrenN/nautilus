@@ -9,6 +9,9 @@
 (define (timestamp)
   (datetime->iso8601 (now/utc)))
 
+(define (timestamp-posix)
+  (exact->inexact (->posix (now))))
+
 ;; destructure lists into values
 (define (get-values xs)
   (match xs

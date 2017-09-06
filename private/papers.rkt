@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require db
+         racket/exn
          racket/match
          racket/string
          threading
@@ -126,35 +127,38 @@
         id 'pdf (pdf sha1 filename directory normalized created modified) result))))
 
 (define (handle-papers state)
-  (define SQLITE-CONN (hash-ref (current-config) 'sqlite-conn))
-  (define LOGGER (hash-ref (current-config) 'logger))
+  (define conn (hash-ref (current-config) 'sqlite-conn))
+  (define logger (hash-ref (current-config) 'logger))
 
-  ;; 1 zip over the Links in the DB and attempt to get from Semanticscholar
-  ;;   1a. if paper and paper insert, update paper id in link table
-  ;;   1b. if paper and paper insert, create author and tag associations
-  ;; 2 zip over the Files in the DB and attempt to get from Semanticscholar
-  ;;   2a. if paper and paper insert, update paper id in file table
-  ;;   2b. if paper and paper insert, create author and tag associations
+  (with-handlers ([exn? (λ (e)
+                          (logger "~a" (format "ERROR ~a\n" (exn->string e)))
+                          (list 'error (exn->string)))])
+    ;; 1 zip over the Links in the DB and attempt to get from Semanticscholar
+    ;;   1a. if paper and paper insert, update paper id in link table
+    ;;   1b. if paper and paper insert, create author and tag associations
+    ;; 2 zip over the Files in the DB and attempt to get from Semanticscholar
+    ;;   2a. if paper and paper insert, update paper id in file table
+    ;;   2b. if paper and paper insert, create author and tag associations
 
-  (define link-rows
-    (rows->dict
-     (db-select-links SQLITE-CONN)
-     #:key "url"
-     #:value '#("id" "url" "title" "status" "directory" "created" "modified")))
+    (define link-rows
+      (rows->dict
+       (db-select-links conn)
+       #:key "url"
+       #:value '#("id" "url" "title" "status" "directory" "created" "modified")))
 
-  (for ([key (hash-keys link-rows)])
-    (process-link key (hash-ref link-rows key)))
+    (for ([key (hash-keys link-rows)])
+      (process-link key (hash-ref link-rows key)))
 
-  (define file-rows
-    (rows->dict
-     (db-select-files SQLITE-CONN)
-     #:key "sha1"
-     #:value '#("id" "filename" "directory" "normalized" "created" "modified")))
+    (define file-rows
+      (rows->dict
+       (db-select-files conn)
+       #:key "sha1"
+       #:value '#("id" "filename" "directory" "normalized" "created" "modified")))
 
-  (for ([key (hash-keys file-rows)])
-    (process-file key (hash-ref file-rows key)))
+    (for ([key (hash-keys file-rows)])
+      (process-file key (hash-ref file-rows key)))
 
-  state)
+    (append state (list (format "Papers updated")))))
 
 (define (process-papers state)
   (if (equal? (car state) 'error)
