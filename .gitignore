@@ -8,3 +8,6 @@ compiled/
 *.db
 logs/
 papers/
+scribblings/*.css
+scribblings/*.js
+scribblings/*.html
