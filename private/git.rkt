@@ -49,9 +49,14 @@
         '(error "Did not properly checkout repo!"))))
 
 (define (check-clean logger tmp-branch cmd state)
-  (if (regexp-match
-         re-commit-clean
-         (with-output-to-string (lambda () (system cmd))))
+  (define was-clean? (regexp-match
+                      re-commit-clean
+                      (with-output-to-string (lambda () (system cmd)))))
+
+  ;; Kill the branch
+  (system (format "git checkout master; git branch -D ~a" tmp-branch))
+
+  (if was-clean?
         (logger "~a" (format "GITBRANCH ~a CLEAN! - NO MERGE" tmp-branch))
         (logger "~a" (format "GITBRANCH ~a ERROR! - NO MERGE" tmp-branch)))
   (append state
