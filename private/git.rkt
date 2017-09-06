@@ -68,7 +68,7 @@
       (system cmd)))
   (if cmd-result
       (begin
-        (append state (list (format "Branch ~a/~a merged and branch deleted"
+        (append state (list (format "Branch ~a merged and branch deleted"
                                     tmp-branch))))
       (begin
         (logger "~a" (format "GITERR ~a MERGE / PUSH PROBLEM IN ~a" tmp-branch
