@@ -1,7 +1,11 @@
 #lang racket/base
 
-(module+ test
-  (require rackunit))
+(require racket/cmdline
+         racket/file
+         json
+         "private/init.rkt"
+         "private/parameters.rkt"
+         "private/utils.rkt")
 
 ;; Notice
 ;; To install (from within the package directory):
@@ -26,45 +30,41 @@
 
 ;; Code here
 
-(module+ test
-  ;; Tests to be run with raco test
-  )
+(define default-configfile-path
+  (build-path (current-directory) ".nautilusrc"))
+
+;; If no cmdline path to config file then use default path
+(define (config-path)
+  (let* ([args (current-command-line-arguments)]
+         [arg0 (if (zero? (vector-length args))
+                   #f
+                   (vector-ref args 0))])
+    (if (path-string? arg0)
+        (path->complete-path arg0)
+        default-configfile-path)))
+
+;; Read config file and parse into hash
+(define (read-config path)
+  (if (and (path? path) (file-exists? path))
+      (call-with-input-file path
+        (λ (in)
+          (define json (read-json in))
+          (hash-merge (current-config) json)))
+      (current-config)))
 
 ;; Command line takes one arg: path to .nautilusrc
 (module+ main
-  (require racket/cmdline
-           racket/file
-           json
-           "private/init.rkt"
-           "private/parameters.rkt")
-
-  (define default-configfile-path
-    (build-path (current-directory) ".nautilusrc"))
-
-  ;; If no cmdline path to config file then use default path
-  (define config-path
-    (let* ([args (current-command-line-arguments)]
-           [arg0 (if (zero? (vector-length args))
-                     #f
-                     (vector-ref args 0))])
-      (if (path-string? arg0)
-          (path->complete-path arg0)
-          default-configfile-path)))
-
-  (define (hash-merge a b)
-    (for/hash ([key (hash-keys a)])
-      (if (hash-has-key? b key)
-          (values key (hash-ref b key))
-          (values key (hash-ref a key)))))
-
-  ;; Read config file and parse into hash
-  (define (read-config path)
-    (if (and (path? path) (file-exists? path))
-        (call-with-input-file path
-          (λ (in)
-            (define json (read-json in))
-            (hash-merge (current-config) json)))
-        (current-config)))
-
-  (parameterize ([current-config (read-config config-path)])
+  (parameterize ([current-config (read-config (config-path))])
     (nautilus-go)))
+
+(module+ test
+  (require rackunit)
+  (check-pred path? default-configfile-path)
+  (check-pred path? (config-path))
+  (check-pred path-string? (config-path))
+  (check-equal? default-configfile-path (config-path))
+
+  ;; Check that setting arg0 changes config-path
+  (define p "/bad/brains/.nautilusrc")
+  (parameterize ([current-command-line-arguments (vector p)])
+    (check-equal? (path->complete-path p) (config-path))))

@@ -24,3 +24,10 @@
 ;; Get last item in vector
 (define (vector-last v)
   (vector-ref v (- (vector-length v) 1)))
+
+;; merge hash a into b
+(define (hash-merge a b)
+  (for/hash ([key (hash-keys a)])
+    (if (hash-has-key? b key)
+        (values key (hash-ref b key))
+        (values key (hash-ref a key)))))
