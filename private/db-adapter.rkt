@@ -13,61 +13,6 @@
 (provide (all-defined-out))
 
 #|
-File schema:
-------------
-id
-paper_id
-sha1
-directory
-filename
-normalized
-created ISO8601
-modified ISO8601
-
-Link schema: (links from README and from data sources)
-------------
-id
-paper_id
-url
-directory
-status <int>
-created ISO8601
-modified ISO8601
-
-Paper schema:
--------------
-id
-title
-year
-abstract
-venue
-directory
-created ISO8601
-modified ISO8601
-
-Author schema:
---------------
-id
-paper_id
-name
-firstName
-middleName
-lastName
-
-Tag schema:
------------
-id
-tag unique
-
-TagsPapers schema:
-------------------
-id
-paper_id
-tag_id
-
-|#
-
-#|
 
 Scratch queries
 ===============
@@ -219,7 +164,9 @@ GROUP BY authors.name;
 ; (define/prepared-query insert-tag ...) -> (insert-tag "foo")
 
 (define/prepared-query db-insert-file
-  "INSERT OR IGNORE INTO files (sha1, filename, directory, normalized, created, modified) values (?, ?, ?, ?, ?, ?)")
+  "INSERT OR IGNORE INTO files
+   (sha1, filename, directory, normalized, created, modified)
+   values (?, ?, ?, ?, ?, ?)")
 
 (define/prepared-query db-update-file-paper-id
   "UPDATE files SET paper_id = ? WHERE id = ?")
@@ -231,7 +178,9 @@ GROUP BY authors.name;
   "select sha1 from files where sha1 = ?")
 
 (define/prepared-query db-insert-link
-  "INSERT OR IGNORE INTO links (url, title, directory, status, created, modified) values (?, ?, ?, ?, ?, ?)")
+  "INSERT OR IGNORE INTO links
+   (url, title, directory, status, created, modified)
+   values (?, ?, ?, ?, ?, ?)")
 
 ;; Only pull entries where paper_id is NULL
 (define (db-select-links conn)
@@ -301,3 +250,139 @@ GROUP BY authors.name;
            (positive? insert-id))
       insert-id
       '()))
+
+(module+ test
+  (require rackunit)
+
+ (define mconn (sqlite3-connect #:database 'memory))
+  (create-tables mconn)
+
+  (test-pred "db-insert-file"
+             simple-result?
+             (db-insert-file mconn 0 1 2 3 4 5))
+
+  (test-pred "db-update-file-paper-id"
+             simple-result?
+             (db-update-file-paper-id mconn 1 1))
+
+  (test-pred "db-update-link-paper-id"
+             simple-result?
+             (db-update-link-paper-id mconn 1 1))
+
+  (test-pred "db-select-file-sha1"
+             rows-result?
+             (db-select-file-sha1 mconn 0))
+
+    (test-pred "db-insert-link"
+             simple-result?
+             (db-insert-link mconn 0 1 2 3 4 5))
+
+    (test-pred "db-select-links"
+             rows-result?
+             (db-select-links mconn))
+
+    (test-pred "db-select-files"
+             rows-result?
+             (db-select-files mconn))
+
+  (define logger-call "")
+  (define test-file (pdf 0 "kangaroo.pdf" "flooz" "frosty" 0 0))
+
+  (define test-exn (exn:fail:sql
+                    "fail:sql" (current-continuation-marks)
+                    'constraint
+                    (hash 'errcode 2067
+                          'message "abort due to constraint violation")))
+
+  (define (test-logger _ str)
+    (set! logger-call str))
+
+  ;; Call handle-sql-error from with-handlers
+  (define (test-fail-handler)
+    (with-handlers ([exn:fail:sql? (handle-sql-error test-logger test-file)])
+      (query mconn "INSERT INTO files
+                    (sha1, filename, directory, normalized, created, modified)
+                    values (?, ?, ?, ?, ?, ?)"
+             0 1 2 3 4 5)))
+
+  (test-equal? "handle-sql-error calls logger and returns 'error on exn:fail:sql?"
+               (test-fail-handler)
+               'error)
+
+  (test-equal?
+   "handle-sql-error calls logger with string"
+   logger-call
+   "SQLERROR 2067 abort due to constraint violation for pdf kangaroo.pdf")
+
+  ;; test handle-sql-error directly
+  (test-case
+      "handle-sql-error handles pdf structs"
+    (check-equal? 'error ((handle-sql-error test-logger test-file) test-exn))
+    (check-equal?
+     logger-call
+     "SQLERROR 2067 abort due to constraint violation for pdf kangaroo.pdf"))
+
+  (test-case
+      "handle-sql-error handles link structs"
+    (define tl (link "badbrains.com" "i against i" "/tmp" 0 0 0))
+    (check-equal? 'error ((handle-sql-error test-logger tl) test-exn))
+    (check-equal?
+     logger-call
+     "SQLERROR 2067 abort due to constraint violation for link badbrains.com"))
+
+    (test-case
+        "handle-sql-error handles paper structs"
+      (define tp (paper "reignition" 1986 "dc hardcore" "axiom" "/tmp" 0 0))
+      (check-equal? 'error ((handle-sql-error test-logger tp) test-exn))
+      (check-equal?
+       logger-call
+       "SQLERROR 2067 abort due to constraint violation for paper reignition"))
+
+    (test-case
+        "handle-sql-error handles author structs"
+      (define ta (author "H. R." "H" "" "R"))
+      (check-equal? 'error ((handle-sql-error test-logger ta) test-exn))
+      (check-equal?
+       logger-call
+       "SQLERROR 2067 abort due to constraint violation for author H. R."))
+
+    (test-case
+        "handle-sql-error handles tag structs"
+      (define tt (tag "dc-hardcore"))
+      (check-equal? 'error ((handle-sql-error test-logger tt) test-exn))
+      (check-equal?
+       logger-call
+       "SQLERROR 2067 abort due to constraint violation for tag dc-hardcore"))
+
+    (test-case
+        "handle-sql-error handles result-record structs"
+      (define tr (result-record 1 'paper "Secret77" "yes"))
+      (check-equal? 'error ((handle-sql-error test-logger tr) test-exn))
+      (check-equal?
+       logger-call
+       "SQLERROR 2067 abort due to constraint violation for result-record paper 1"))
+
+    (test-case
+      "insert-file returns 'ok on dupe insert"
+      (check-equal?
+       'ok
+       (insert-file test-logger mconn
+                    (pdf 0 "she's calling you" "/tmp" "" 0 0))))
+
+    (test-case
+        "insert-link returns 'ok on dupe insert"
+      ;; create original link
+      (define l (link "badbrains.com" "Hired Gun" "/tmp" 0 0 0))
+      (insert-link test-logger mconn l)
+      ;; test inserting a dupe
+      (check-equal? 'ok (insert-link test-logger mconn l)))
+
+    (test-case
+        "get-insert-id returns insert-id if a positive integer"
+      (check-equal? 1 (get-insert-id (simple-result (hash 'insert-id 1))))
+      (check-equal? 101 (get-insert-id (simple-result (hash 'insert-id 101)))))
+
+    (test-case
+        "get-insert-id returns null if insert-id not a positive integer"
+      (check-equal? null (get-insert-id (simple-result (hash 'insert-id #f))))
+      (check-equal? null (get-insert-id (simple-result (hash 'insert-id -1))))))
