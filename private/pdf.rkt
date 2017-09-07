@@ -63,7 +63,8 @@
   (require rackunit)
 
   (test-case "extract-filedata returns a pdf struct from an input-port"
-    (define re-date #px"^[\\d]{4}-[\\d]{2}-[\\d]{2}T[\\d]{2}:[\\d]{2}:[\\d]{2}.[\\d]*")
+    (define re-date
+      #px"^[\\d]{4}-[\\d]{2}-[\\d]{2}T[\\d]{2}:[\\d]{2}:[\\d]{2}.[\\d]*")
     (define in (open-input-bytes #"(i got a letter from the government)"))
     (define readfn (extract-filedata
                     (string->path "papers-we-love/papers")
