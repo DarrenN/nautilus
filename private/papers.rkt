@@ -18,9 +18,10 @@
 
 (provide process-papers)
 
-; (struct result-record (id type record result) #:transparent)
+; (struct paper-response (id type record result) #:transparent)
 ; (struct paper (title year abstract venue directory created modified) #:transparent)
 
+;; Update original link/file record with the paper id
 (define/mock (update-source pr)
   #:opaque (test-connection test-logger)
   #:mock current-config #:as config-mock
@@ -29,23 +30,32 @@
   #:mock update-link-paperid #:as update-link-mock  #:with-behavior void
   #:mock update-file-paperid #:as update-file-mock  #:with-behavior void
 
-  (define-values (pid record) (get-values pr))
+  (define-values (pid paper-data) (get-values pr))
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
 
-  (if (equal? (result-record-type record) 'link)
-      (update-link-paperid logger conn record pid)
-      (update-file-paperid logger conn record pid))
+  (if (equal? (paper-response-type paper-data) 'link)
+      (update-link-paperid logger conn paper-data pid)
+      (update-file-paperid logger conn paper-data pid))
 
-  (list pid record))
+  (list pid paper-data))
 
-(define (update-authors pr)
-  (define-values (pid record) (get-values pr))
+;; Exract Author data from result and insert into DB
+(define/mock (update-authors pr)
+  #:opaque (test-connection test-logger)
+  #:mock current-config #:as config-mock
+  #:with-behavior (const (hash 'logger test-logger 'sqlite-conn test-connection))
+  #:mock insert-and-join-author #:as insert-author-mock  #:with-behavior void
+
+  (define-values (pid paper-data) (get-values pr))
+
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
-  (define result (result-record-result record))
-  (define structured-authors (hash-ref result 'structuredAuthors))
-  (define authors (hash-ref result 'authors))
+  (define result (paper-response-result paper-data))
+
+  ;; structured-authors and authors should be lists
+  (define structured-authors (hash-ref result 'structuredAuthors '()))
+  (define authors (hash-ref result 'authors '()))
 
   ;; TODO: if no structure-authors then fall back on authors
   ;; NOTE: all name fields are run through string-titlecase
@@ -56,25 +66,31 @@
         [(hash-table ('firstName a) ('middleNames b) ('lastName c))
          (values (string-titlecase a) (string-titlecase (string-join b))
                  (string-titlecase c))]))
+
     (define name (string-normalize-spaces
                   (string-join (list firstName middleName lastName))))
     (define a (author name firstName middleName lastName))
     (insert-and-join-author logger conn a pid))
 
-  (list pid record))
+  (list pid paper-data))
 
-(define (update-tags pr)
-  (define-values (pid record) (get-values pr))
+;; Extract tags and insert into DB
+(define/mock (update-tags pr)
+  #:opaque (test-connection test-logger)
+  #:mock current-config #:as config-mock
+  #:with-behavior (const (hash 'logger test-logger 'sqlite-conn test-connection))
+  #:mock insert-and-join-tag #:as insert-tag-mock  #:with-behavior void
+
+  (define-values (pid paper-data) (get-values pr))
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
-  (define tags (hash-ref (result-record-result record) 'tags))
+  (define tags (hash-ref (paper-response-result paper-data) 'tags))
 
   ;; NOTE: all tags should be lowercased!
-
   (for ([t tags])
     (insert-and-join-tag logger conn (tag (string-downcase t)) pid))
 
-  (list pid record))
+  (list pid paper-data))
 
 (define (pipeline-inserts pr)
   (~> pr
@@ -86,8 +102,8 @@
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
   (define datetime (timestamp))
-  (define result (result-record-result record))
-  (define rec (result-record-record record))
+  (define result (paper-response-result record))
+  (define rec (paper-response-record record))
   (define directory
     (match rec
       [(struct link _) (link-directory rec)]
@@ -126,7 +142,7 @@
         (logger "~a" (format "FETCHERR (SEMANTIC) ~a" (cdr result)))
         result)
       (insert-results
-       (result-record id (object-name data-type) data-type result))))
+       (paper-response id (object-name data-type) data-type result))))
 
 ;; Destructure DB record into a link and dispatch
 (define/mock (process-link url vdetails)
@@ -192,9 +208,32 @@
            mock
            mock/rackunit)
 
+  (test-case "update-tags"
+    (define pid 128)
+    (define res
+      (hasheq 'tags (list "CON-SORDINO" "mOuNtAiN" "Small Axe"))))
+
+  (test-case "update-authors"
+    (define pid 64)
+    (define res
+      (hasheq 'structuredAuthors (list (hasheq 'firstName "MOLLY"
+                                               'middleNames '("b.")
+                                               'lastName "rankin"))))
+    (define record (paper-response 32 'link '() res))
+
+    (with-mocks update-authors
+      (define r (update-authors (list pid record)))
+      (check-equal? r (list pid record))
+      (check-mock-calls
+       insert-author-mock
+       (list (arguments test-logger test-connection
+                        (author "Molly B. Rankin" "Molly"
+                                "B." "Rankin") pid)))
+      (check-equal? r (list pid record))))
+
   (test-case "update-source"
-    (define linkr (result-record 12 'link '() '()))
-    (define pdfr (result-record 12 'pdf '() '()))
+    (define linkr (paper-response 12 'link '() '()))
+    (define pdfr (paper-response 12 'pdf '() '()))
 
     (with-mocks update-source
       (define r (update-source (list 36 linkr)))
@@ -249,7 +288,7 @@
       (check-mock-calls logger-mock null)
       (check-mock-calls
        insert-mock
-       (list (arguments (result-record 12 'link tlink '(ok)))))
+       (list (arguments (paper-response 12 'link tlink '(ok)))))
       (mock-reset! logger-mock))
 
     ;; handle link with fetch error
@@ -271,7 +310,7 @@
       (check-mock-calls logger-mock null)
       (check-mock-calls
        insert-mock
-       (list (arguments (result-record 12 'pdf tpdf '(ok)))))
+       (list (arguments (paper-response 12 'pdf tpdf '(ok)))))
       (mock-reset! logger-mock))
 
     ;; handle pdf with fetch error

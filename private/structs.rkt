@@ -5,7 +5,7 @@
          (struct-out link)
          (struct-out paper)
          (struct-out pdf)
-         (struct-out result-record)
+         (struct-out paper-response)
          (struct-out tag)
          (struct-out tag-paper))
 
@@ -16,4 +16,4 @@
 (struct tag (tag) #:transparent)
 (struct author-paper (author_id paper_id) #:transparent)
 (struct tag-paper (tad_id paper_id) #:transparent)
-(struct result-record (id type record result) #:transparent)
+(struct paper-response (id type record result) #:transparent)

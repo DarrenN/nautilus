@@ -202,9 +202,9 @@ GROUP BY authors.name;
                  [(struct author _) (author-name ds)]
                  [(struct paper _) (paper-title ds)]
                  [(struct tag _) (tag-tag ds)]
-                 [(struct result-record _)
-                  (format "~a ~a" (result-record-type ds)
-                          (result-record-id ds))]))
+                 [(struct paper-response _)
+                  (format "~a ~a" (paper-response-type ds)
+                          (paper-response-id ds))]))
 
     (logger "~a" (format "SQLERROR ~a ~a for ~a ~a"
                          errcode message (object-name ds) id))
@@ -237,11 +237,11 @@ GROUP BY authors.name;
 
 (define (update-file-paperid logger conn record pid)
   (with-handlers ([exn:fail:sql? (handle-sql-error logger record)])
-    (db-update-file-paper-id conn pid (result-record-id record))))
+    (db-update-file-paper-id conn pid (paper-response-id record))))
 
 (define (update-link-paperid logger conn record pid)
   (with-handlers ([exn:fail:sql? (handle-sql-error logger record)])
-    (db-update-link-paper-id conn pid (result-record-id record))))
+    (db-update-link-paper-id conn pid (paper-response-id record))))
 
 (define (get-insert-id q)
   (define info (simple-result-info q))
@@ -355,12 +355,12 @@ GROUP BY authors.name;
        "SQLERROR 2067 abort due to constraint violation for tag dc-hardcore"))
 
     (test-case
-        "handle-sql-error handles result-record structs"
-      (define tr (result-record 1 'paper "Secret77" "yes"))
+        "handle-sql-error handles paper-response structs"
+      (define tr (paper-response 1 'paper "Secret77" "yes"))
       (check-equal? 'error ((handle-sql-error test-logger tr) test-exn))
       (check-equal?
        logger-call
-       "SQLERROR 2067 abort due to constraint violation for result-record paper 1"))
+       "SQLERROR 2067 abort due to constraint violation for paper-response paper 1"))
 
     (test-case
       "insert-file returns 'ok on dupe insert"
