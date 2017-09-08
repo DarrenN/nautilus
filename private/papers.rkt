@@ -1,7 +1,9 @@
 #lang racket/base
 
 (require db
+         mock
          racket/exn
+         racket/function
          racket/match
          racket/string
          threading
@@ -16,10 +18,17 @@
 
 (provide process-papers)
 
-; (struct result-record (id record result) #:transparent)
+; (struct result-record (id type record result) #:transparent)
 ; (struct paper (title year abstract venue directory created modified) #:transparent)
 
-(define (update-source pr)
+(define/mock (update-source pr)
+  #:opaque (test-connection test-logger)
+  #:mock current-config #:as config-mock
+  #:with-behavior (const (hash 'logger test-logger 'sqlite-conn test-connection))
+
+  #:mock update-link-paperid #:as update-link-mock  #:with-behavior void
+  #:mock update-file-paperid #:as update-file-mock  #:with-behavior void
+
   (define-values (pid record) (get-values pr))
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
@@ -100,11 +109,12 @@
 ;; Take the db id and struct and determine what to query Semantic Scholar with
 ;; then hand off the result for insertion - the keyword optional args allow us
 ;; to mock this functions deps in tests
-(define (fetch-and-insert-result
-         id data-type
-         #:fetch-with [fetch-semanticscholar fetch-semanticscholar]
-         #:insert-with [insert-results insert-results]
-         #:log-with [logger (hash-ref (current-config) 'logger)])
+(define/mock (fetch-and-insert-result
+              id data-type [logger (hash-ref (current-config) 'logger)])
+
+  #:mock fetch-semanticscholar #:as fetch-mock #:with-behavior (const '(ok))
+  #:mock insert-results #:as insert-mock #:with-behavior (const '(12 null))
+
   (define query (match data-type
       [(struct link _) (link-title data-type)]
       [(struct pdf _) (pdf-normalized data-type)]))
@@ -119,14 +129,18 @@
        (result-record id (object-name data-type) data-type result))))
 
 ;; Destructure DB record into a link and dispatch
-(define (process-link url vdetails)
+(define/mock (process-link url vdetails)
+  #:mock fetch-and-insert-result #:as fetch-result-mock  #:with-behavior void
+
   (define-values (id url title directory status created modified)
     (vector->values vdetails))
   (fetch-and-insert-result
    id (link url title directory status created modified)))
 
 ;; Destructure DB record into a pdf and dispatch
-(define (process-file sha1 vdetails)
+(define/mock (process-file sha1 vdetails)
+  #:mock fetch-and-insert-result #:as fetch-result-mock  #:with-behavior void
+
   (define-values (id filename directory normalized created modified)
     (vector->values vdetails))
   (fetch-and-insert-result
@@ -178,40 +192,98 @@
            mock
            mock/rackunit)
 
+  (test-case "update-source"
+    (define linkr (result-record 12 'link '() '()))
+    (define pdfr (result-record 12 'pdf '() '()))
+
+    (with-mocks update-source
+      (define r (update-source (list 36 linkr)))
+      (check-equal? r (list 36 linkr))
+      (check-mock-num-calls update-file-mock 0)
+      (check-mock-calls
+       update-link-mock
+       (list (arguments test-logger test-connection linkr 36))))
+
+    (with-mocks update-source
+      (define r (update-source (list 36 pdfr)))
+      (check-equal? r (list 36 pdfr))
+      (check-mock-num-calls update-link-mock 0)
+      (check-mock-calls
+       update-file-mock
+       (list (arguments test-logger test-connection pdfr 36)))))
+
+  (test-case "process-link"
+    (define vdetails
+      (vector 12 "http://deerhoof.com" "Mountain Moves" "deerhoof/" 0 0 0))
+
+    (with-mocks process-link
+      (with-mock-behavior ([fetch-result-mock (const '(12 null))])
+        (process-link "http://deerhood.com" vdetails)
+        (check-mock-calls
+         fetch-result-mock
+         (list (arguments 12 (link "http://deerhoof.com" "Mountain Moves"
+                                   "deerhoof/" 0 0 0)))))))
+
+  (test-case "process-file"
+    (define vdetails
+      (vector 12 "deerhoof.pdf" "deerhoof/" "Deerhoof" 0 0))
+
+    (with-mocks process-file
+      (with-mock-behavior ([fetch-result-mock (const '(12 null))])
+        (process-file "123abc" vdetails)
+        (check-mock-calls
+         fetch-result-mock
+         (list (arguments 12 (pdf "123abc" "deerhoof.pdf" "deerhoof/"
+                                  "Deerhoof" 0 0)))))))
+
   (test-case "fetch-and-insert-result (link)"
-    (define fetch-mock (mock #:behavior (const '(ok))))
-    (define insert-mock (mock #:behavior (const '(12 null))))
     (define logger-mock (mock #:behavior void))
     (define tlink (link "http://pma.com" "PMA" "plt/" 0 0 0))
+    (define tpdf (pdf "123abc" "deerhoof.pdf" "deerhoof/" "Mountain Moves" 0 0))
 
     ;; handle link
-    (fetch-and-insert-result
-     12 tlink
-     #:fetch-with fetch-mock
-     #:insert-with insert-mock
-     #:log-with logger-mock)
+    (with-mocks fetch-and-insert-result
+      (fetch-and-insert-result 12 tlink logger-mock)
 
-    (check-mock-calls fetch-mock (list (arguments "PMA")))
-    (check-mock-calls logger-mock null)
-    (check-mock-calls
-     insert-mock
-     (list (arguments (result-record 12 'link tlink '(ok)))))
+      (check-mock-calls fetch-mock (list (arguments "PMA")))
+      (check-mock-calls logger-mock null)
+      (check-mock-calls
+       insert-mock
+       (list (arguments (result-record 12 'link tlink '(ok)))))
+      (mock-reset! logger-mock))
 
-    (mock-reset! fetch-mock)
-    (mock-reset! insert-mock)
-    (mock-reset! logger-mock)
+    ;; handle link with fetch error
+    (with-mocks fetch-and-insert-result
+      (with-mock-behavior ([fetch-mock (const '(ERROR "nada"))])
+        (fetch-and-insert-result 12 tlink logger-mock))
 
-    (with-mock-behavior ([fetch-mock (const '(ERROR "nada"))])
-      (fetch-and-insert-result
-       12 tlink
-       #:fetch-with fetch-mock
-       #:insert-with insert-mock
-       #:log-with logger-mock))
+      (check-mock-calls fetch-mock (list (arguments "PMA")))
+      (check-mock-calls logger-mock
+                        (list (arguments "~a" "FETCHERR (SEMANTIC) (nada)")))
+      (check-mock-calls insert-mock null)
+      (mock-reset! logger-mock))
 
-    (check-mock-calls fetch-mock (list (arguments "PMA")))
-    (check-mock-calls logger-mock
-                      (list (arguments "~a" "FETCHERR (SEMANTIC) (nada)")))
-    (check-mock-calls insert-mock null))
+    ;; handle pdf
+    (with-mocks fetch-and-insert-result
+      (fetch-and-insert-result 12 tpdf logger-mock)
+
+      (check-mock-calls fetch-mock (list (arguments "Mountain Moves")))
+      (check-mock-calls logger-mock null)
+      (check-mock-calls
+       insert-mock
+       (list (arguments (result-record 12 'pdf tpdf '(ok)))))
+      (mock-reset! logger-mock))
+
+    ;; handle pdf with fetch error
+    (with-mocks fetch-and-insert-result
+      (with-mock-behavior ([fetch-mock (const '(ERROR "nada"))])
+        (fetch-and-insert-result 12 tpdf logger-mock))
+
+      (check-mock-calls fetch-mock (list (arguments "Mountain Moves")))
+      (check-mock-calls logger-mock
+                        (list (arguments "~a" "FETCHERR (SEMANTIC) (nada)")))
+      (check-mock-calls insert-mock null)
+      (mock-reset! logger-mock)))
 
   (test-case "process-papers let's 'error states fall through"
     (define err '(error ("Bad things went down")))
