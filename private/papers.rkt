@@ -98,12 +98,19 @@
       update-authors
       update-tags))
 
-(define (insert-results record)
+(define/mock (insert-results paper-data)
+  #:opaque (test-connection test-logger)
+  #:mock current-config #:as config-mock
+  #:with-behavior (const (hash 'logger test-logger 'sqlite-conn test-connection))
+  #:mock insert-paper #:as insert-mock  #:with-behavior void
+  #:mock pipeline-inserts #:as pipeline-mock  #:with-behavior void
+  #:mock timestamp #:as timestamp-mock  #:with-behavior (const 0)
+
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
   (define datetime (timestamp))
-  (define result (paper-response-result record))
-  (define rec (paper-response-record record))
+  (define result (paper-response-result paper-data))
+  (define rec (paper-response-record paper-data))
   (define directory
     (match rec
       [(struct link _) (link-directory rec)]
@@ -119,7 +126,7 @@
   ;; pass pid + record to update-authors (create authors/joins)
   ;; pass pid + record to update-tags (create tags/joins)
   (if paper-id
-      (pipeline-inserts (list paper-id record))
+      (pipeline-inserts (list paper-id paper-data))
       #f))
 
 ;; Take the db id and struct and determine what to query Semantic Scholar with
@@ -208,17 +215,53 @@
            mock
            mock/rackunit)
 
+  (test-case "insert-results"
+    ; (struct paper-response (id type record result) #:transparent)
+    (define record (pdf "123abc" "deerhoof.pdf" "deerhoof/" "Deerhoof" 0 0))
+    (define result (hasheq 'title "Kafe Mania!"
+                           'year 2016
+                           'abstract "The Magic is a record!"
+                           'venue "Villain"))
+    (define paper-data (paper-response 16 'pdf record result))
+    (define pstruct (paper "Kafe Mania!" 2016 "The Magic is a record!" "Villain"
+                           "deerhoof/" 0 0))
+
+    (with-mocks insert-results
+      (with-mock-behavior ([insert-mock (const 16)]
+                           [pipeline-mock (const (list 16 paper-data))])
+        (define r (insert-results paper-data))
+        (check-equal? r (list 16 paper-data))
+        (check-mock-calls insert-mock
+                          (list (arguments test-logger test-connection
+                                           pstruct)))
+        (check-mock-calls pipeline-mock
+                          (list (arguments (list 16 paper-data)))))))
+
   (test-case "update-tags"
     (define pid 128)
     (define res
-      (hasheq 'tags (list "CON-SORDINO" "mOuNtAiN" "Small Axe"))))
+      (hasheq 'tags (list "CON-SORDINO" "mOuNtAiN" "Small Axe")))
+    (define paper-data (paper-response 128 'link '() res))
+
+    (with-mocks update-tags
+      (define r (update-tags (list pid paper-data)))
+      (check-equal? r (list pid paper-data))
+      (check-mock-calls
+       insert-tag-mock
+       (list (arguments test-logger test-connection (tag "con-sordino") pid)
+             (arguments test-logger test-connection (tag "mountain") pid)
+             (arguments test-logger test-connection (tag "small axe") pid)))))
 
   (test-case "update-authors"
     (define pid 64)
     (define res
       (hasheq 'structuredAuthors (list (hasheq 'firstName "MOLLY"
                                                'middleNames '("b.")
-                                               'lastName "rankin"))))
+                                               'lastName "rankin")
+                                       (hasheq 'firstName "Satomi"
+                                               'middleNames '()
+                                               'lastName "MATSUZAKI"))))
+
     (define record (paper-response 32 'link '() res))
 
     (with-mocks update-authors
@@ -228,7 +271,10 @@
        insert-author-mock
        (list (arguments test-logger test-connection
                         (author "Molly B. Rankin" "Molly"
-                                "B." "Rankin") pid)))
+                                "B." "Rankin") pid)
+             (arguments test-logger test-connection
+                        (author "Satomi Matsuzaki" "Satomi"
+                                "" "Matsuzaki") pid)))
       (check-equal? r (list pid record))))
 
   (test-case "update-source"
