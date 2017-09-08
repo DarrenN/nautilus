@@ -63,7 +63,7 @@
     (filter
      not-false?
      (for/list ([readme-path readmes])
-         (call-with-input-file repo-path #:mode 'text
+         (call-with-input-file readme-path #:mode 'text
            (parse-readme repo-path readme-path)))))
 
   ; will be #f is any PDFs cased a non-dupe SQLError

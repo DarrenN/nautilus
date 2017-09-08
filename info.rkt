@@ -3,6 +3,9 @@
 (define deps '("base"
                "gregor"
                "levenshtein"
+               "mock"
+               "mock-rackunit"
+               "quickcheck"
                "rackunit-lib"
                "threading"))
 (define build-deps '("scribble-lib" "racket-doc"))
