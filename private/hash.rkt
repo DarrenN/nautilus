@@ -1,5 +1,9 @@
 #lang racket/base
 
+(require racket/function
+         racket/contract
+         racket/list)
+
 ;; Hash Utilities
 ;; ==============
 

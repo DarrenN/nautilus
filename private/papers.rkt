@@ -97,34 +97,40 @@
       (pipeline-inserts (list paper-id record))
       #f))
 
+;; Take the db id and struct and determine what to query Semantic Scholar with
+;; then hand off the result for insertion - the keyword optional args allow us
+;; to mock this functions deps in tests
+(define (fetch-and-insert-result
+         id data-type
+         #:fetch-with [fetch-semanticscholar fetch-semanticscholar]
+         #:insert-with [insert-results insert-results]
+         #:log-with [logger (hash-ref (current-config) 'logger)])
+  (define query (match data-type
+      [(struct link _) (link-title data-type)]
+      [(struct pdf _) (pdf-normalized data-type)]))
+
+  (define result (fetch-semanticscholar query))
+  (if (and (list? result)
+           (equal? (car result) 'ERROR))
+      (begin
+        (logger "~a" (format "FETCHERR (SEMANTIC) ~a" (cdr result)))
+        result)
+      (insert-results
+       (result-record id (object-name data-type) data-type result))))
+
+;; Destructure DB record into a link and dispatch
 (define (process-link url vdetails)
-  (define logger (hash-ref (current-config) 'logger))
   (define-values (id url title directory status created modified)
     (vector->values vdetails))
+  (fetch-and-insert-result
+   id (link url title directory status created modified)))
 
-  (define result (fetch-semanticscholar title))
-  (if (and (list? result)
-           (equal? (car result) 'ERROR))
-      (begin
-        (logger "~a" (format "FETCHERR (SEMANTIC) ~a" (cdr result)))
-        result)
-      (insert-results
-       (result-record id 'link (link url title directory status created modified)
-                      result))))
-
+;; Destructure DB record into a pdf and dispatch
 (define (process-file sha1 vdetails)
-  (define logger (hash-ref (current-config) 'logger))
   (define-values (id filename directory normalized created modified)
     (vector->values vdetails))
-  (define result (fetch-semanticscholar normalized))
-  (if (and (list? result)
-           (equal? (car result) 'ERROR))
-      (begin
-        (logger "~a" (format "FETCHERR (SEMANTIC) ~a" (cdr result)))
-        result)
-      (insert-results
-       (result-record
-        id 'pdf (pdf sha1 filename directory normalized created modified) result))))
+  (fetch-and-insert-result
+   id (pdf sha1 filename directory normalized created modified)))
 
 (define (handle-papers state)
   (define conn (hash-ref (current-config) 'sqlite-conn))
@@ -133,12 +139,13 @@
   (with-handlers ([exn? (λ (e)
                           (logger "~a" (format "ERROR ~a\n" (exn->string e)))
                           (list 'error (exn->string)))])
-    ;; 1 zip over the Links in the DB and attempt to get from Semanticscholar
-    ;;   1a. if paper and paper insert, update paper id in link table
-    ;;   1b. if paper and paper insert, create author and tag associations
-    ;; 2 zip over the Files in the DB and attempt to get from Semanticscholar
-    ;;   2a. if paper and paper insert, update paper id in file table
-    ;;   2b. if paper and paper insert, create author and tag associations
+
+    ;; TODO: These selects can be done first and then entries can be piped into
+    ;; a buffered asynchronous channel that multiple threads can pull from to
+    ;; make requests to Semantic Scholar:
+    ;;
+    ;; (for ([x xs])
+    ;;  (async-channel-put ch (list 'link (hash-ref link-rows key))))
 
     (define link-rows
       (rows->dict
@@ -164,3 +171,48 @@
   (if (equal? (car state) 'error)
       state
       (handle-papers state)))
+
+(module+ test
+  (require rackunit
+           racket/function
+           mock
+           mock/rackunit)
+
+  (test-case "fetch-and-insert-result (link)"
+    (define fetch-mock (mock #:behavior (const '(ok))))
+    (define insert-mock (mock #:behavior (const '(12 null))))
+    (define logger-mock (mock #:behavior void))
+    (define tlink (link "http://pma.com" "PMA" "plt/" 0 0 0))
+
+    ;; handle link
+    (fetch-and-insert-result
+     12 tlink
+     #:fetch-with fetch-mock
+     #:insert-with insert-mock
+     #:log-with logger-mock)
+
+    (check-mock-calls fetch-mock (list (arguments "PMA")))
+    (check-mock-calls logger-mock null)
+    (check-mock-calls
+     insert-mock
+     (list (arguments (result-record 12 'link tlink '(ok)))))
+
+    (mock-reset! fetch-mock)
+    (mock-reset! insert-mock)
+    (mock-reset! logger-mock)
+
+    (with-mock-behavior ([fetch-mock (const '(ERROR "nada"))])
+      (fetch-and-insert-result
+       12 tlink
+       #:fetch-with fetch-mock
+       #:insert-with insert-mock
+       #:log-with logger-mock))
+
+    (check-mock-calls fetch-mock (list (arguments "PMA")))
+    (check-mock-calls logger-mock
+                      (list (arguments "~a" "FETCHERR (SEMANTIC) (nada)")))
+    (check-mock-calls insert-mock null))
+
+  (test-case "process-papers let's 'error states fall through"
+    (define err '(error ("Bad things went down")))
+    (check-equal? err (process-papers err))))
