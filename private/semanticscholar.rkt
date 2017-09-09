@@ -115,4 +115,8 @@
     (check-equal? (parse-result result) (hasheq 'title "Mirror Monster"
                                                 'year "2014"
                                                 'abstract "East Coast"
-                                                'venue "Villain"))))
+                                                'venue "Villain"
+                                                'structuredAuthors '(1 2 3)
+                                                'authors '(4 5 6)
+                                                'tags '(7 8 9)
+                                                'slug "mirror-monster"))))
