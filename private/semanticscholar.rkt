@@ -31,11 +31,12 @@
   (post semanticscholar "/api/1/search"
         #:data (jsexpr->string (hash-set post-template 'queryString title))))
 
-(define (get-text key result)
-  (hash-ref (hash-ref key result) 'text))
+;; Return 'text value from hash inside result or empty string
+;; (hash 'foo (hash 'text "paradise girls")) -> "paradise girls"
+(define (get-text result key)
+  (hash-ref (hash-ref result key (hash)) 'text ""))
 
 (define (parse-result result)
-  ;(println result)
   (hasheq
    'title (get-text result 'title)
    'year (get-text result 'year)
@@ -83,3 +84,35 @@
     (if closest-match
         (parse-result (hash-ref result-dict closest-match))
         (list 'ERROR (format "No results for ~a" title)))))
+
+(module+ test
+  (require rackunit)
+
+  (test-case "l-distance returns integer"
+    (check-pred integer? (l-distance "Acceptance Speech" "Model Behavior")))
+
+  (test-case "semanticscholar is a requester"
+    (check-pred requester? semanticscholar))
+
+  (test-case "get-text returns 'text from hash or empty string"
+    (check-equal? "Plastic Thrills"
+                  (get-text (hash 'deerhoof (hash 'text "Plastic Thrills"))
+                            'deerhoof))
+    (check-equal? ""
+                  (get-text (hash 'deerhoof (hash 'text "Plastic Thrills"))
+                            'mountainbattles)))
+
+  (test-case "parse-result returns a hash of values from result"
+    (define result (hasheq 'title (hasheq 'text "Mirror Monster")
+                           'year (hasheq 'text "2014")
+                           'paperAbstract (hasheq 'text "East Coast")
+                           'venue (hasheq 'text "Villain")
+                           'structuredAuthors (list 1 2 3)
+                           'authors (list 4 5 6)
+                           'keyPhrases (list 7 8 9)
+                           'slug "mirror-monster"))
+
+    (check-equal? (parse-result result) (hasheq 'title "Mirror Monster"
+                                                'year "2014"
+                                                'abstract "East Coast"
+                                                'venue "Villain"))))
