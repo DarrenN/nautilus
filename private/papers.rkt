@@ -100,6 +100,13 @@
       update-authors
       update-tags))
 
+;; If paper-data isn't a paper ressponse, its prolly an error and send
+;; it off to the response-chan
+(define (guard-insert paper-data)
+  (if (paper-response? paper-data)
+      (insert-results paper-data)
+      paper-data))
+
 (define/mock (insert-results paper-data)
   #:opaque (test-connection test-logger)
   #:mock current-config #:as config-mock
@@ -111,6 +118,7 @@
   (define logger (hash-ref (current-config) 'logger))
   (define conn (hash-ref (current-config) 'sqlite-conn))
   (define datetime (timestamp))
+
   (define result (paper-response-result paper-data))
   (define rec (paper-response-record paper-data))
   (define directory
@@ -124,25 +132,37 @@
                    (hash-ref result 'venue) directory datetime datetime))
 
   (define paper-id (insert-paper logger conn p))
-  ;; pass pid + record to update-source (update file/link with paper-id)
-  ;; pass pid + record to update-authors (create authors/joins)
-  ;; pass pid + record to update-tags (create tags/joins)
+
   (if paper-id
       (pipeline-inserts (list paper-id paper-data))
       #f))
 
-;; Take the db id and struct and determine what to query Semantic Scholar with
-;; then hand off the result for insertion - the keyword optional args allow us
-;; to mock this functions deps in tests
-(define/mock (fetch-and-insert-result
-              id data-type [logger (hash-ref (current-config) 'logger)])
+(define (create-link row)
+  (define-values (id paper_id url title directory status created modified)
+    (vector->values row))
+  (values id title (link url title directory status created modified)))
 
+(define (create-pdf row)
+  (define-values (id paper_id sha1 filename directory normalized created
+                     modified)
+    (vector->values row))
+  (values id normalized (pdf sha1 filename directory normalized created
+                             modified)))
+
+(define/mock (fetch-metadata item)
+  #:opaque (test-logger)
+  #:mock current-config #:as config-mock
+  #:with-behavior (const (hash 'logger test-logger))
   #:mock fetch-semanticscholar #:as fetch-mock #:with-behavior (const '(ok))
-  #:mock insert-results #:as insert-mock #:with-behavior (const '(12 null))
 
-  (define query (match data-type
-      [(struct link _) (link-title data-type)]
-      [(struct pdf _) (pdf-normalized data-type)]))
+  (define logger (hash-ref (current-config) 'logger))
+  (define type (car item))
+  (define row (cadr item))
+
+  (define-values (id query data-type)
+    (case type
+      [(link) (create-link row)]
+      [(file) (create-pdf row)]))
 
   (define result (fetch-semanticscholar query))
   (if (and (list? result)
@@ -150,32 +170,13 @@
       (begin
         (logger "~a" (format "FETCHERR (SEMANTIC) ~a" (cdr result)))
         result)
-      (insert-results
-       (paper-response id (object-name data-type) data-type result))))
-
-;; Destructure DB record into a link and dispatch
-(define/mock (process-link url vdetails)
-  #:mock fetch-and-insert-result #:as fetch-result-mock  #:with-behavior void
-
-  (define-values (id url title directory status created modified)
-    (vector->values vdetails))
-  (fetch-and-insert-result
-   id (link url title directory status created modified)))
-
-;; Destructure DB record into a pdf and dispatch
-(define/mock (process-file sha1 vdetails)
-  #:mock fetch-and-insert-result #:as fetch-result-mock  #:with-behavior void
-
-  (define-values (id filename directory normalized created modified)
-    (vector->values vdetails))
-  (fetch-and-insert-result
-   id (pdf sha1 filename directory normalized created modified)))
+      (paper-response id (object-name data-type) data-type result)))
 
 (define WEB-WORKER-COUNT 10)
-(define DB-WORKER-COUNT 2)
+(define DB-WORKER-COUNT 1)
 
 (define web-chan (make-async-channel))
-(define db-chan (make-async-channel (* WEB-WORKER-COUNT 2)))
+(define db-chan (make-async-channel (* 4 WEB-WORKER-COUNT))) ;; buffered 4x
 (define result-chan (make-async-channel))
 
 (define (web-worker id input-channel output-channel)
@@ -186,11 +187,13 @@
               (define (put x)
                 (async-channel-put output-channel x))
               (let loop ([data (get)])
-                (printf "web-worker ~a data: ~a\n" id data)
                 (case data
-                  [(quit) (begin (put data) (kill-thread th))]
+                  [(quit) (begin
+                            (increment-web-worker-state)
+                            (put data)
+                            (kill-thread th))]
                   [else (begin
-                          (put data)
+                          (put (fetch-metadata data))
                           (loop (get)))])))))
   th)
 
@@ -202,27 +205,29 @@
               (define (put x)
                 (async-channel-put output-channel x))
               (let loop ([data (get)])
-                (printf "db-worker ~a data: ~a\n" id data)
                 (case data
-                  [(quit) (if (web-workers-dead?)
-                              (begin (put data) (kill-thread th))
+                  [(quit) (if (equal? (unbox web-worker-state) WEB-WORKER-COUNT)
+                              (begin
+                                (increment-db-worker-state)
+                                (put data)
+                                (kill-thread th))
                               (loop (get)))]
                   [else (begin
-                          (put (list 'ok id))
+                          (put (guard-insert data))
                           (loop (get)))])))))
   th)
 
-(define web-workers (map (λ (id) (web-worker id web-chan db-chan))
-                         (range WEB-WORKER-COUNT)))
+(define web-worker-state (box 0))
+(define db-worker-state (box 0))
 
-(define db-workers (map (λ (id) (db-worker id db-chan result-chan))
-                        (range DB-WORKER-COUNT)))
+(define web-workers '())
+(define db-workers '())
 
-(define (web-workers-dead?)
-  (not (ormap thread-running? web-workers)))
+(define (increment-web-worker-state)
+  (set-box! web-worker-state (add1 (unbox web-worker-state))))
 
-(define (db-workers-dead?)
-  (not (ormap thread-running? db-workers)))
+(define (increment-db-worker-state)
+  (set-box! db-worker-state (add1 (unbox db-worker-state))))
 
 (define (handle-papers state)
   (define conn (hash-ref (current-config) 'sqlite-conn))
@@ -230,51 +235,39 @@
 
   (with-handlers ([exn? (λ (e)
                           (logger "~a" (format "ERROR ~a\n" (exn->string e)))
-                          (list 'error (exn->string)))])
+                          (list 'error (exn->string e)))])
 
-    ;; TODO: These selects can be done first and then entries can be piped into
-    ;; a buffered asynchronous channel that multiple threads can pull from to
-    ;; make requests to Semantic Scholar:
-    ;;
-    ;; (for ([x xs])
-    ;;  (async-channel-put ch (list 'link (hash-ref link-rows key))))
+    ;; IMPORTANT: We need to setup the worker threads here so they have the
+    ;; correct parameterization of current-config
+    (set! web-workers (map (λ (id) (web-worker id web-chan db-chan))
+                           (range WEB-WORKER-COUNT)))
 
-    (define link-rows
-      (rows->dict
-       (db-select-links conn)
-       #:key "url"
-       #:value '#("id" "url" "title" "status" "directory" "created"
-                       "modified")))
+    (set! db-workers (map (λ (id) (db-worker id db-chan result-chan))
+                          (range DB-WORKER-COUNT)))
 
-    (for ([key (hash-keys link-rows)])
-      (process-link key (hash-ref link-rows key))
-      ;(async-channel-put web-chan (hash-ref link-rows key))
-      ))
+    (define link-rows (db-select-links conn))
+    (define file-rows (db-select-files conn))
 
-    (define file-rows
-      (rows->dict
-       (db-select-files conn)
-       #:key "sha1"
-       #:value '#("id" "filename" "directory" "normalized" "created"
-                       "modified")))
+    (for ([link-row link-rows])
+      (async-channel-put web-chan (list 'link link-row)))
 
-  #|
-    (for ([key (hash-keys file-rows)])
-      (process-file key (hash-ref file-rows key)))
+    (for ([file-row file-rows])
+      (async-channel-put web-chan (list 'file file-row)))
 
+    ;; Send kill signals to web-workers, these cascade through the
+    ;; channels eventually terminating the result-worker below
+    (for ([q (make-list WEB-WORKER-COUNT 'quit)])
+      (async-channel-put web-chan q))
 
-  (define output
+    ;; Block on the result-channel until all the db workers are done
+    (define result
       (let loop ([data (async-channel-get result-chan)])
-        (printf "result-chan ~a\n")
         (case data
-          [(quit) (if (db-workers-dead?)
-                      'all-done
+          [(quit) (if (equal? (unbox db-worker-state) DB-WORKER-COUNT)
+                      "Papers updated"
                       (loop (async-channel-get result-chan)))]
           [else (loop (async-channel-get result-chan))])))
-
-    (printf "OUTPUT ~a\n" output)
-|#
-    (append state (list (format "Papers updated"))))
+    (append state (list (format "Process papers: ~a" result)))))
 
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
@@ -293,6 +286,32 @@
            mock
            mock/rackunit)
 
+  (test-case "fetch-metadata"
+    (define l (vector 1 1 "http://oolong.com" "Oolong" "oolong/" 0 0 0))
+
+    (with-mocks fetch-metadata
+      (define resp (fetch-metadata (list 'link l)))
+      (check-pred paper-response? resp)
+      (check-equal? (paper-response-id resp) 1)
+      (check-equal? (paper-response-type resp) 'link)
+      (check-pred link? (paper-response-record resp))
+      (check-mock-calls fetch-mock
+                        (list (arguments "Oolong")))))
+
+  (test-case "create-link"
+    (define l (vector 1 1 "http://oolong.com" "Oolong" "oolong/" 0 0 0))
+    (define-values (id query data-type) (create-link l))
+    (check-pred link? data-type)
+    (check-equal? 1 id)
+    (check-equal? "Oolong" query))
+
+  (test-case "create-pdf"
+    (define l (vector 1 1 "123abc" "oolong.pdf" "oolong/" "Oolong" 0 0))
+    (define-values (id query data-type) (create-pdf l))
+    (check-pred pdf? data-type)
+    (check-equal? 1 id)
+    (check-equal? "Oolong" query))
+
   (test-case "insert-results"
     ; (struct paper-response (id type record result) #:transparent)
     (define record (pdf "123abc" "deerhoof.pdf" "deerhoof/" "Deerhoof" 0 0))
@@ -304,6 +323,7 @@
     (define pstruct (paper "Kafe Mania!" 2016 "The Magic is a record!" "Villain"
                            "deerhoof/" 0 0))
 
+    ;; called with paper-response
     (with-mocks insert-results
       (with-mock-behavior ([insert-mock (const 16)]
                            [pipeline-mock (const (list 16 paper-data))])
@@ -374,79 +394,6 @@
       (check-mock-calls
        update-file-mock
        (list (arguments test-logger test-connection pdfr 36)))))
-
-  (test-case "process-link"
-    (define vdetails
-      (vector 12 "http://deerhoof.com" "Mountain Moves" "deerhoof/" 0 0 0))
-
-    (with-mocks process-link
-      (with-mock-behavior ([fetch-result-mock (const '(12 null))])
-        (process-link "http://deerhood.com" vdetails)
-        (check-mock-calls
-         fetch-result-mock
-         (list (arguments 12 (link "http://deerhoof.com" "Mountain Moves"
-                                   "deerhoof/" 0 0 0)))))))
-
-  (test-case "process-file"
-    (define vdetails
-      (vector 12 "deerhoof.pdf" "deerhoof/" "Deerhoof" 0 0))
-
-    (with-mocks process-file
-      (with-mock-behavior ([fetch-result-mock (const '(12 null))])
-        (process-file "123abc" vdetails)
-        (check-mock-calls
-         fetch-result-mock
-         (list (arguments 12 (pdf "123abc" "deerhoof.pdf" "deerhoof/"
-                                  "Deerhoof" 0 0)))))))
-
-  (test-case "fetch-and-insert-result (link)"
-    (define logger-mock (mock #:behavior void))
-    (define tlink (link "http://pma.com" "PMA" "plt/" 0 0 0))
-    (define tpdf (pdf "123abc" "deerhoof.pdf" "deerhoof/" "Mountain Moves" 0 0))
-
-    ;; handle link
-    (with-mocks fetch-and-insert-result
-      (fetch-and-insert-result 12 tlink logger-mock)
-
-      (check-mock-calls fetch-mock (list (arguments "PMA")))
-      (check-mock-calls logger-mock null)
-      (check-mock-calls
-       insert-mock
-       (list (arguments (paper-response 12 'link tlink '(ok)))))
-      (mock-reset! logger-mock))
-
-    ;; handle link with fetch error
-    (with-mocks fetch-and-insert-result
-      (with-mock-behavior ([fetch-mock (const '(ERROR "nada"))])
-        (fetch-and-insert-result 12 tlink logger-mock))
-
-      (check-mock-calls fetch-mock (list (arguments "PMA")))
-      (check-mock-calls logger-mock
-                        (list (arguments "~a" "FETCHERR (SEMANTIC) (nada)")))
-      (check-mock-calls insert-mock null)
-      (mock-reset! logger-mock))
-
-    ;; handle pdf
-    (with-mocks fetch-and-insert-result
-      (fetch-and-insert-result 12 tpdf logger-mock)
-
-      (check-mock-calls fetch-mock (list (arguments "Mountain Moves")))
-      (check-mock-calls logger-mock null)
-      (check-mock-calls
-       insert-mock
-       (list (arguments (paper-response 12 'pdf tpdf '(ok)))))
-      (mock-reset! logger-mock))
-
-    ;; handle pdf with fetch error
-    (with-mocks fetch-and-insert-result
-      (with-mock-behavior ([fetch-mock (const '(ERROR "nada"))])
-        (fetch-and-insert-result 12 tpdf logger-mock))
-
-      (check-mock-calls fetch-mock (list (arguments "Mountain Moves")))
-      (check-mock-calls logger-mock
-                        (list (arguments "~a" "FETCHERR (SEMANTIC) (nada)")))
-      (check-mock-calls insert-mock null)
-      (mock-reset! logger-mock)))
 
   (test-case "process-papers let's 'error states fall through"
     (define err '(error ("Bad things went down")))

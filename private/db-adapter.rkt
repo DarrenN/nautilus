@@ -184,11 +184,11 @@ GROUP BY authors.name;
 
 ;; Only pull entries where paper_id is NULL
 (define (db-select-links conn)
-  (query conn "select * from links WHERE paper_id IS NULL ORDER BY directory"))
+  (query-rows conn "select * from links WHERE paper_id IS NULL ORDER BY directory"))
 
 ;; Only pull entries where paper_id is NULL
 (define (db-select-files conn)
-  (query conn "select * from files WHERE paper_id is NULL ORDER BY directory"))
+  (query-rows conn "select * from files WHERE paper_id is NULL ORDER BY directory"))
 
 ;; If the exception isn't due to a dupe unique val then we need to log the error
 (define (handle-sql-error logger ds)
