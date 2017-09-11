@@ -281,11 +281,11 @@ GROUP BY authors.name;
              (db-insert-link mconn 0 1 2 3 4 5))
 
     (test-pred "db-select-links"
-             rows-result?
+             list?
              (db-select-links mconn))
 
     (test-pred "db-select-files"
-             rows-result?
+             list?
              (db-select-files mconn))
 
   (define logger-call "")
