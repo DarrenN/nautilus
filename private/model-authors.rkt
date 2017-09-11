@@ -73,9 +73,9 @@
         (get-insert-id q)
         '())))
 
-;; Use exceptions to handle dupe entries in DB and also situations where insert
-;; ID wasn't returned from insert query.
-;;
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 ;; if insert fails then get author id and make join
 ;; otherwise make join with returned id
 (define (insert-and-join-author logger conn author pid)

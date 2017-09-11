@@ -66,6 +66,9 @@
         (get-insert-id q)
         '())))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define (insert-and-join-tag logger conn tag pid)
   (with-handlers ([exn:fail:sql? (handle-sql-error logger tag)])
     (define q (db-insert-tag conn (tag-tag tag)))

@@ -251,6 +251,9 @@ GROUP BY authors.name;
       insert-id
       '()))
 
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
+
 (module+ test
   (require rackunit)
 

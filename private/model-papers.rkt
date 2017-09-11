@@ -48,6 +48,9 @@
         (vector-ref (car q) 0)
         '())))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 ;; Insert or Ignore paper, and return paper id based on title select
 (define (insert-paper logger conn paper)
   (with-handlers ([exn:fail:sql? (handle-sql-error logger paper)])

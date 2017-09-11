@@ -54,10 +54,16 @@
       (append state '("PDFs processed"))
       '(error "SQLERROR when saving PDFs, check logs")))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define (process-pdfs state)
   (if (equal? (car state) 'error)
       state
       (handle-pdfs state)))
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
 
 (module+ test
   (require rackunit)

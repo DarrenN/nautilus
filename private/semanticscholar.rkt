@@ -57,6 +57,9 @@
                (format "Couldn't read data for ~a: ~a"
                        title (exn:fail:network:http:error-code e)))))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 ; Return the search result closest to the search query using L-distance (hasheq)
 ; munged into a hasheq that maps to the DB schemas
 (define (fetch-semanticscholar title)
@@ -84,6 +87,9 @@
     (if closest-match
         (parse-result (hash-ref result-dict closest-match))
         (list 'ERROR (format "No results for ~a" title)))))
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
 
 (module+ test
   (require rackunit)
