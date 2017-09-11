@@ -176,7 +176,7 @@
 (define DB-WORKER-COUNT 1)
 
 (define web-chan (make-async-channel))
-(define db-chan (make-async-channel (* 4 WEB-WORKER-COUNT))) ;; buffered 4x
+(define db-chan (make-async-channel))
 (define result-chan (make-async-channel))
 
 (define (web-worker id input-channel output-channel)
