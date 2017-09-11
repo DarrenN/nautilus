@@ -1,4 +1,4 @@
-Nautilus
+Nautilus [![Build Status](https://travis-ci.org/DarrenN/nautilus.svg?branch=master)](https://travis-ci.org/DarrenN/nautilus) [![Coverage Status](https://coveralls.io/repos/github/DarrenN/nautilus/badge.svg?branch=master)](https://coveralls.io/github/DarrenN/nautilus?branch=master)
 ========
 
 ![Golden Nautilus - Alberto J. Almarza](https://c1.staticflickr.com/8/7317/27363231515_421d83ffe5_b.jpg)
