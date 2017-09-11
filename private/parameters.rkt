@@ -7,6 +7,9 @@
 (define (get-tmp-branch)
   (format "nautilus-~a" (timestamp-posix)))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define current-config
   (make-parameter
    (hasheq 'sqlite-path (build-path (current-directory) "nautilus.db")

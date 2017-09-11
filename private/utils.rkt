@@ -7,6 +7,9 @@
 
 (provide (all-defined-out))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define (timestamp)
   (datetime->iso8601 (now/utc)))
 
@@ -31,6 +34,9 @@
   (for/hash ([key (remove-duplicates (append (hash-keys a) (hash-keys b)))])
     (cond [(hash-has-key? b key) (values key (hash-ref b key))]
           [(hash-has-key? a key) (values key (hash-ref a key))])))
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
 
 (module+ test
   (require rackunit)

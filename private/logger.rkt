@@ -15,27 +15,13 @@
 (define logger_thread #f)
 (define current-log-file "")
 
-;; Log listener for debug purposes. Should turn this off.
-#|
-(void
- (thread
-  (λ ()
-    (let loop ()
-      (match (sync rc)
-        [(vector l m v v1)
-         (printf "~a\n" m)])
-      (loop)))))
-|#
+(define (restart-logger)
+  (kill-thread logger_thread)
+  (start-logger))
+
 (current-logger chlogger)
 
-(define (get-current-log-file) current-log-file)
-
-(define (format-log fmt . msg)
-  (log-info fmt (string-append (datetime->iso8601 (now))
-                               " " (apply format (cons fmt msg)))))
-
 ;; Write log messages to file
-
 (define (start-logger log-path filename)
   (let* ([r (make-log-receiver chlogger 'info)]
          [log-date (substring (datetime->iso8601 (now)) 0 10)]
@@ -58,9 +44,14 @@
                        (flush-output)])
                     (loop)))))))))
 
-(define (restart-logger)
-  (kill-thread logger_thread)
-  (start-logger))
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
+(define (get-current-log-file) current-log-file)
+
+(define (format-log fmt . msg)
+  (log-info fmt (string-append (datetime->iso8601 (now))
+                               " " (apply format (cons fmt msg)))))
 
 (define (launch-log-daemon log-path filename)
   (start-logger log-path filename)

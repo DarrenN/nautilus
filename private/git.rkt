@@ -98,6 +98,9 @@
                          (list cmd-merge cmd-push cmd-delete) state)
       (check-clean logger tmp-branch cmd-commit state)))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define (get-repo logger state)
   (if (equal? (car state) 'error)
       state

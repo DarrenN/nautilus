@@ -52,10 +52,16 @@
           (hash-merge (current-config) json)))
       (current-config)))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 ;; Command line takes one arg: path to .nautilusrc
 (module+ main
   (parameterize ([current-config (read-config (config-path))])
     (nautilus-go)))
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
 
 (module+ test
   (require rackunit)

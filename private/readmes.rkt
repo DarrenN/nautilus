@@ -78,10 +78,16 @@
       (append state '("READMEs processed"))
       '(error "SQLERROR when saving links, check logs")))
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define (process-readmes state)
   (if (equal? (car state) 'error)
       state
       (handle-readmes state)))
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
 
 (module+ test
   (require rackunit)
