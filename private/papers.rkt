@@ -2,8 +2,10 @@
 
 (require db
          mock
+         racket/async-channel
          racket/exn
          racket/function
+         racket/list
          racket/match
          racket/string
          threading
@@ -169,6 +171,59 @@
   (fetch-and-insert-result
    id (pdf sha1 filename directory normalized created modified)))
 
+(define WEB-WORKER-COUNT 10)
+(define DB-WORKER-COUNT 2)
+
+(define web-chan (make-async-channel))
+(define db-chan (make-async-channel (* WEB-WORKER-COUNT 2)))
+(define result-chan (make-async-channel))
+
+(define (web-worker id input-channel output-channel)
+  (define th
+    (thread (λ ()
+              (define (get)
+                (async-channel-get input-channel))
+              (define (put x)
+                (async-channel-put output-channel x))
+              (let loop ([data (get)])
+                (printf "web-worker ~a data: ~a\n" id data)
+                (case data
+                  [(quit) (begin (put data) (kill-thread th))]
+                  [else (begin
+                          (put data)
+                          (loop (get)))])))))
+  th)
+
+(define (db-worker id input-channel output-channel)
+  (define th
+    (thread (λ ()
+              (define (get)
+                (async-channel-get input-channel))
+              (define (put x)
+                (async-channel-put output-channel x))
+              (let loop ([data (get)])
+                (printf "db-worker ~a data: ~a\n" id data)
+                (case data
+                  [(quit) (if (web-workers-dead?)
+                              (begin (put data) (kill-thread th))
+                              (loop (get)))]
+                  [else (begin
+                          (put (list 'ok id))
+                          (loop (get)))])))))
+  th)
+
+(define web-workers (map (λ (id) (web-worker id web-chan db-chan))
+                         (range WEB-WORKER-COUNT)))
+
+(define db-workers (map (λ (id) (db-worker id db-chan result-chan))
+                        (range DB-WORKER-COUNT)))
+
+(define (web-workers-dead?)
+  (not (ormap thread-running? web-workers)))
+
+(define (db-workers-dead?)
+  (not (ormap thread-running? db-workers)))
+
 (define (handle-papers state)
   (define conn (hash-ref (current-config) 'sqlite-conn))
   (define logger (hash-ref (current-config) 'logger))
@@ -188,26 +243,49 @@
       (rows->dict
        (db-select-links conn)
        #:key "url"
-       #:value '#("id" "url" "title" "status" "directory" "created" "modified")))
+       #:value '#("id" "url" "title" "status" "directory" "created"
+                       "modified")))
 
     (for ([key (hash-keys link-rows)])
-      (process-link key (hash-ref link-rows key)))
+      (process-link key (hash-ref link-rows key))
+      ;(async-channel-put web-chan (hash-ref link-rows key))
+      ))
 
     (define file-rows
       (rows->dict
        (db-select-files conn)
        #:key "sha1"
-       #:value '#("id" "filename" "directory" "normalized" "created" "modified")))
+       #:value '#("id" "filename" "directory" "normalized" "created"
+                       "modified")))
 
+  #|
     (for ([key (hash-keys file-rows)])
       (process-file key (hash-ref file-rows key)))
 
-    (append state (list (format "Papers updated")))))
+
+  (define output
+      (let loop ([data (async-channel-get result-chan)])
+        (printf "result-chan ~a\n")
+        (case data
+          [(quit) (if (db-workers-dead?)
+                      'all-done
+                      (loop (async-channel-get result-chan)))]
+          [else (loop (async-channel-get result-chan))])))
+
+    (printf "OUTPUT ~a\n" output)
+|#
+    (append state (list (format "Papers updated"))))
+
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
 
 (define (process-papers state)
   (if (equal? (car state) 'error)
       state
       (handle-papers state)))
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
 
 (module+ test
   (require rackunit
