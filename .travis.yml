@@ -48,5 +48,3 @@ script:
 
 after_success:
  - raco setup --check-pkg-deps --pkgs nautilus
- - raco pkg install --deps search-auto cover cover-codecov
- - raco cover -b -f codecov -d $TRAVIS_BUILD_DIR/coverage .
