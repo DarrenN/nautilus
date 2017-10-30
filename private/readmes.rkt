@@ -2,6 +2,8 @@
 
 (require file/glob
          json
+         mock
+         racket/function
          racket/list
          racket/path
          racket/port
@@ -33,23 +35,26 @@
 ; (struct link (url title directory status created modified) #:transparent)
 (define (create-link title url metadata)
   (let ([directory-path (hash-ref metadata 'directory-path)]
-        [timestamp (hash-ref metadata 'timestamp)])
-    (link url title (path->string directory-path) 0 timestamp timestamp)))
+        [datetime (hash-ref metadata 'datetime)])
+    (link url title (path->string directory-path) 0 datetime datetime)))
 
 ; TODO: check url and determine if an internal PDF or external URL then
 ; pass to another function for processing into the correct struct type
 ; example: the pdf function should return a file struct with the SHA-1 etc
-(define (parse-links matches metadata)
+(define/mock (parse-links matches metadata)
+  #:mock create-link #:as create-link-mock
+  #:mock create-file #:as create-file-mock
+
   (filter
    not-false?
    (for/list ([match matches])
      (define url (last match))
      (define title (first match))
-     (if (and
-          (not (equal? title ":scroll:"))
-          (external-url? url))
-         (create-link title url metadata)
-         (create-file title url metadata)))))
+     (cond
+       [(equal? title ":scroll:") #f]
+       [(external-url? url) (create-link title url metadata)]
+       [(internal-pdf? url) (create-file title url metadata)]
+       [else #f]))))
 
 ;; Returns a list of link structs from README markdown
 (define (parse-readme repo-path path)
@@ -112,6 +117,11 @@
 (module+ test
   (require rackunit)
 
+  (define dt (timestamp))
+  (define metadata (hash 'datetime dt
+                         'directory-path (string->path "music")
+                         'file-path (string->path "README.md")))
+
   (test-case "external-url? filters out non-http, youtube, and pwl links"
     (check-pred external-url? "https://godflesh.com/streetcleaner/")
     (check-pred external-url? "http://godflesh.com/jesu.pdf")
@@ -150,14 +160,36 @@
     (define err '(error ("Bad things went down")))
     (check-equal? err (process-readmes err)))
 
+  (test-case "parse-links differentiates between links and files"
+    (with-mocks parse-links
+      (with-mock-behavior ([create-link-mock (const 'link)]
+                           [create-file-mock (const 'file)])
+        (check-equal? (list 'link 'file 'link)
+                      (parse-links
+                       '(("Wardenclyffe" "http://survive.com/RR7349")
+                         ("Sorcerer" "/tx/synth/rr7349.sorcerer.pdf")
+                         ("Low Fog"
+                          "https://open.spotify.com/track/2N4nQ2ebuyh9fRZxsshH2f"))
+                       metadata)))))
+
   (test-case "parse-links returns title and url if valid pattern"
-    (define xs '(("Live at CBGB's" "http://badbrains.com")
-                 ("PMA" "http://dischord.com")
-                 ("Big Takeover" "https://sst.com")))
-    (check-equal? xs (parse-links xs)))
+    (define xs
+      (list (link "http://badbrains.com" "Live at CBGB's" "music" 0 dt dt)
+            (link "http://dischord.com" "PMA" "music" 0 dt dt)
+            (link "https://sst.com" "Big Takeover" "music" 0 dt dt)))
+    (define ls
+      '(("Live at CBGB's" "http://badbrains.com")
+        ("PMA" "http://dischord.com")
+        ("Big Takeover" "https://sst.com")))
+    (check-equal? xs (parse-links ls metadata)))
 
   (test-case "parse-links returns null for invalid patterns"
-    (check-equal? null
-                  (parse-links '((":scroll:" "http://badbrains.com")
-                                 ("Live at CBGB's" "/dc/hardcore")
-                                 ("HR" "https://www.youtube.com/watch?v=2pUlNfdnsAM"))))))
+    (with-mocks parse-links
+      (with-mock-behavior ([create-link-mock (const 'link)]
+                           [create-file-mock (const 'file)])
+        (check-equal? null
+                      (parse-links
+                       '((":scroll:" "http://badbrains.com")
+                         ("Live at CBGB's" "/dc/hardcore")
+                         ("HR" "https://www.youtube.com/watch?v=2pUlNfdnsAM"))
+                       metadata))))))

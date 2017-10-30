@@ -29,8 +29,8 @@
   #:mock current-config #:as config-mock
   #:with-behavior (const (hash 'logger test-logger 'sqlite-conn test-connection))
 
-  #:mock update-link-paperid #:as update-link-mock  #:with-behavior void
-  #:mock update-file-paperid #:as update-file-mock  #:with-behavior void
+  #:mock update-link-paperid #:as update-link-mock #:with-behavior void
+  #:mock update-file-paperid #:as update-file-mock #:with-behavior void
 
   (define-values (pid paper-data) (get-values pr))
   (define logger (hash-ref (current-config) 'logger))
@@ -314,7 +314,7 @@
 
   (test-case "insert-results"
     ; (struct paper-response (id type record result) #:transparent)
-    (define record (pdf "123abc" "deerhoof.pdf" "deerhoof/" "Deerhoof" 0 0))
+    (define record (pdf "123abc" "Deerhoof" "deerhoof.pdf" "deerhoof/" 0 0))
     (define result (hasheq 'title "Kafe Mania!"
                            'year 2016
                            'abstract "The Magic is a record!"

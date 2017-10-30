@@ -1,7 +1,9 @@
 #lang racket/base
 
 (require file/glob
+         mock
          openssl/sha1
+         racket/function
          racket/path
          racket/string
          threading
@@ -10,13 +12,15 @@
          "structs.rkt"
          "utils.rkt")
 
-(provide process-pdfs
-         create-file)
+(provide create-file)
 
 (define (get-pdf-hash in)
   (sha1 in))
 
-(define (extract-filedata title url metadata repo-path)
+(define/mock (extract-filedata title url metadata repo-path)
+  #:mock call-with-input-file #:as call-with-input-mock
+  #:with-behavior (const "08b69551734c8dbc2af9690f8a8eca0fcd46cd12")
+
   (define pdf-path (build-path repo-path
                                (hash-ref metadata 'directory-path)
                                (hash-ref metadata 'file-path)))
@@ -34,34 +38,8 @@
        datetime
        datetime))
 
-(define (handle-pdfs state)
-  (define REPO-PATH (expand-user-path
-                     (hash-ref (current-config) 'pwlrepo-path)))
-  (define SQLITE-PATH (hash-ref (current-config) 'sqlite-path))
-  (define SQLITE-CONN (hash-ref (current-config) 'sqlite-conn))
-  (define PDFS (glob (build-path REPO-PATH "**" "*.pdf")))
-  (define LOGGER (hash-ref (current-config) 'logger))
-
-  ; will be #f is any PDFs cased a non-dupe SQLError
-  (define saved-pdfs?
-    (for/and ([pdf-path PDFS])
-      (equal? 'ok
-              (insert-file
-               LOGGER SQLITE-CONN
-               (call-with-input-file pdf-path #:mode 'binary
-                 (extract-filedata REPO-PATH pdf-path))))))
-
-  (if saved-pdfs?
-      (append state '("PDFs processed"))
-      '(error "SQLERROR when saving PDFs, check logs")))
-
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
-
-(define (process-pdfs state)
-  (if (equal? (car state) 'error)
-      state
-      (handle-pdfs state)))
 
 (define (create-file title url metadata)
   (define REPO-PATH (expand-user-path
@@ -77,17 +55,20 @@
   (test-case "extract-filedata returns a pdf struct from an input-port"
     (define re-date
       #px"^[\\d]{4}-[\\d]{2}-[\\d]{2}T[\\d]{2}:[\\d]{2}:[\\d]{2}.[\\d]*")
-    (define in (open-input-bytes #"(i got a letter from the government)"))
-    (define readfn (extract-filedata
-                    (string->path "papers-we-love/papers")
-                    (string->path "papers-we-love/papers/ai/HAL-2000.pdf")))
-    (define p (readfn in))
-    (check-equal? (pdf-sha1 p) "07eba1b33856e41e2f99e8aead30762a41da3ca3")
-    (check-equal? (pdf-filename p) "HAL-2000.pdf")
-    (check-equal? (pdf-directory p) "ai/")
-    (check-regexp-match re-date (pdf-created p))
-    (check-regexp-match re-date (pdf-modified p)))
+    (define in (open-input-bytes #"(1 2 3)"))
+    (define repo-path "/repo/path/")
+    (define metadata
+      (hash 'directory-path (string->path "ai/")
+            'file-path (string->path "HAL-2000.pdf")
+            'datetime (timestamp)))
+    (with-mocks extract-filedata
+      (define r (extract-filedata "HAL 2000 and You"
+                                  "hal-2000.pdf"
+                                  metadata
+                                  repo-path))
 
-  (test-case "process-pdfs let's error state fall through"
-    (define err '(error ("Bad things went down")))
-    (check-equal? err (process-pdfs err))))
+      (check-equal? (pdf-sha1 r) "08b69551734c8dbc2af9690f8a8eca0fcd46cd12")
+      (check-equal? (pdf-filename r) "HAL-2000.pdf")
+      (check-equal? (pdf-directory r) "ai/")
+      (check-regexp-match re-date (pdf-created r))
+      (check-regexp-match re-date (pdf-modified r)))))
