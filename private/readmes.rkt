@@ -7,6 +7,7 @@
          racket/port
          "db-adapter.rkt"
          "parameters.rkt"
+         "pdf.rkt"
          "structs.rkt"
          "utils.rkt")
 
@@ -15,10 +16,30 @@
 (define re-markdown-link #rx"\\[(.*?)\\]\\((.*?)\\)")
 (define re-has-http #rx"^(http)")
 (define re-has-youtube #rx"youtube")
-(define re-has-pwl #rx"(https://github.com/papers-we-love)")
+(define re-has-pwl #rx"(github.com/papers-we-love)")
+(define re-has-pdf #rx".pdf$")
 
-;; extract only non-pwl web links from text
-(define (parse-links matches)
+; Has http(s) and not github/pwl or youtube
+(define (external-url? u)
+  (and (not (null? (regexp-match* re-has-http u)))
+       (null? (regexp-match* re-has-pwl u))
+       (null? (regexp-match* re-has-youtube u))))
+
+; Has .pdf at end
+(define (internal-pdf? u)
+  (not (null? (regexp-match* re-has-pdf u))))
+
+;; return a link struct
+; (struct link (url title directory status created modified) #:transparent)
+(define (create-link title url metadata)
+  (let ([directory-path (hash-ref metadata 'directory-path)]
+        [timestamp (hash-ref metadata 'timestamp)])
+    (link url title (path->string directory-path) 0 timestamp timestamp)))
+
+; TODO: check url and determine if an internal PDF or external URL then
+; pass to another function for processing into the correct struct type
+; example: the pdf function should return a file struct with the SHA-1 etc
+(define (parse-links matches metadata)
   (filter
    not-false?
    (for/list ([match matches])
@@ -26,10 +47,9 @@
      (define title (first match))
      (if (and
           (not (equal? title ":scroll:"))
-          (not (regexp-match re-has-youtube url))
-          (regexp-match re-has-http url))
-         (list title url)
-         #f))))
+          (external-url? url))
+         (create-link title url metadata)
+         (create-file title url metadata)))))
 
 ;; Returns a list of link structs from README markdown
 (define (parse-readme repo-path path)
@@ -39,17 +59,16 @@
       (split-path (find-relative-path repo-path path)))
     (define text (port->string in))
     (define datetime (timestamp))
+    (define metadata (hash 'datetime datetime
+                           'directory-path directory-path
+                           'file-path file-path))
+
     (define match (regexp-match* re-markdown-link text
                                  #:match-select cdr))
-    (define parsed (if (list? match)
-                       (parse-links match)
-                       #f))
 
-    (if parsed
-        (for/list ([p parsed]
-                   #:when p)
-          (link (last p) (first p) (path->string directory-path)
-                0 datetime datetime))
+    ; If the README has matches then convert to link or file structs
+    (if (list? match)
+        (parse-links match metadata)
         #f)))
 
 (define (handle-readmes state)
@@ -63,15 +82,16 @@
     (filter
      not-false?
      (for/list ([readme-path readmes])
-         (call-with-input-file readme-path #:mode 'text
-           (parse-readme repo-path readme-path)))))
+       (call-with-input-file readme-path #:mode 'text
+         (parse-readme repo-path readme-path)))))
 
   ; will be #f is any PDFs cased a non-dupe SQLError
   (define saved-readmes?
     (for/and ([insert (flatten
                        (for/list ([readme parsed-readmes])
                          (for/list ([r readme])
-                           (insert-link logger conn r))))])
+                           (when (link? r) (insert-link logger conn r))
+                           (when (pdf? r) (insert-file logger conn r)))))])
       (equal? 'ok insert)))
 
   (if saved-readmes?
@@ -91,6 +111,19 @@
 
 (module+ test
   (require rackunit)
+
+  (test-case "external-url? filters out non-http, youtube, and pwl links"
+    (check-pred external-url? "https://godflesh.com/streetcleaner/")
+    (check-pred external-url? "http://godflesh.com/jesu.pdf")
+    (check-false (external-url? "breed-like-rats.pdf"))
+    (check-false (external-url? "/godflesh/streetcleaner/breed-like-rats.pdf"))
+    (check-false (external-url? "https://www.youtube.com/repoman.pdf"))
+    (check-false (external-url? "https://www.github.com/papers-we-love/master/foo.pdf")))
+
+  (test-case "interal-pdf? filters out everything but local pdf files"
+    (check-pred internal-pdf? "/godflesh/streetcleaner.pdf")
+    (check-pred internal-pdf? "breed-like-rats.ps.pdf")
+    (check-false (internal-pdf? "rising.ps")))
 
   (test-case "parse-readme returns a list of link structs from an input-port"
     (define re-date
@@ -125,6 +158,6 @@
 
   (test-case "parse-links returns null for invalid patterns"
     (check-equal? null
-      (parse-links '((":scroll:" "http://badbrains.com")
-                     ("Live at CBGB's" "/dc/hardcore")
-                     ("HR" "https://www.youtube.com/watch?v=2pUlNfdnsAM"))))))
+                  (parse-links '((":scroll:" "http://badbrains.com")
+                                 ("Live at CBGB's" "/dc/hardcore")
+                                 ("HR" "https://www.youtube.com/watch?v=2pUlNfdnsAM"))))))

@@ -9,7 +9,7 @@
          (struct-out tag)
          (struct-out tag-paper))
 
-(struct pdf (sha1 filename directory normalized created modified) #:transparent)
+(struct pdf (sha1 title filename directory created modified) #:transparent)
 (struct link (url title directory status created modified) #:transparent)
 (struct paper (title year abstract venue directory created modified) #:transparent)
 (struct author (name first_name middle_name last_name) #:transparent)

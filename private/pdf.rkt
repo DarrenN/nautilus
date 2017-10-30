@@ -10,28 +10,29 @@
          "structs.rkt"
          "utils.rkt")
 
-(provide process-pdfs)
+(provide process-pdfs
+         create-file)
 
-(define (normalize-filename file-path)
-  (~> file-path
-      (path-replace-extension "")
-      path->string
-      string-downcase
-      (string-replace  #rx"-|_" " ")
-      string-normalize-spaces))
+(define (get-pdf-hash in)
+  (sha1 in))
 
-(define (extract-filedata repo-path path)
-  (λ (in)
-      (define-values
-        (directory-path file-path is-dir)
-        (split-path (find-relative-path repo-path path)))
-      (define datetime (timestamp))
-      (pdf (sha1 in)
-           (path->string file-path)
-           (path->string directory-path)
-           (normalize-filename file-path)
-           datetime
-           datetime)))
+(define (extract-filedata title url metadata repo-path)
+  (define pdf-path (build-path repo-path
+                               (hash-ref metadata 'directory-path)
+                               (hash-ref metadata 'file-path)))
+
+  (define filehash (call-with-input-file
+                     pdf-path #:mode 'binary
+                     get-pdf-hash))
+
+  (define datetime (hash-ref metadata 'datetime))
+
+  (pdf filehash
+       title
+       (path->string (hash-ref metadata 'file-path))
+       (path->string (hash-ref metadata 'directory-path))
+       datetime
+       datetime))
 
 (define (handle-pdfs state)
   (define REPO-PATH (expand-user-path
@@ -62,6 +63,11 @@
       state
       (handle-pdfs state)))
 
+(define (create-file title url metadata)
+  (define REPO-PATH (expand-user-path
+                     (hash-ref (current-config) 'pwlrepo-path)))
+  (extract-filedata title url metadata REPO-PATH))
+
 ;//////////////////////////////////////////////////////////////////////////////
 ; TESTS
 
@@ -79,20 +85,9 @@
     (check-equal? (pdf-sha1 p) "07eba1b33856e41e2f99e8aead30762a41da3ca3")
     (check-equal? (pdf-filename p) "HAL-2000.pdf")
     (check-equal? (pdf-directory p) "ai/")
-    (check-equal? (pdf-normalized p) "hal 2000")
     (check-regexp-match re-date (pdf-created p))
     (check-regexp-match re-date (pdf-modified p)))
 
   (test-case "process-pdfs let's error state fall through"
     (define err '(error ("Bad things went down")))
-    (check-equal? err (process-pdfs err)))
-
-  (test-case "normalize file name does what it says"
-    (check-equal? (normalize-filename (string->path "/sabrina/the/witch.exe"))
-                  "/sabrina/the/witch")
-    (check-equal? (normalize-filename (string->path "/Sabrina/tHe/WiTcH.exeE"))
-                  "/sabrina/the/witch")
-    (check-equal? (normalize-filename (string->path "Sabrina-the_witch.pdf"))
-                  "sabrina the witch")
-    (check-equal? (normalize-filename (string->path "   sabrina The   witch"))
-                  "sabrina the witch")))
+    (check-equal? err (process-pdfs err))))

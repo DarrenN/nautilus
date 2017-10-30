@@ -8,7 +8,7 @@
 (provide fetch-semanticscholar)
 
 (define post-template
-  (hasheq 'autoEnableFilters #t
+  (hasheq 'disableFacetAggregations #t
           'page 1
           'pageSize 10
           'sort "relevance"

@@ -84,10 +84,11 @@ General notes
   (parameterize ([current-config newconfig])
     (define result
       (~> state
-          process-pdfs
+          ;process-pdfs
           process-readmes
           process-papers
-          push-repo))
+          ;push-repo
+          ))
 
     (log-messages result)
     (sleep 2) ; allow time to flush the log)

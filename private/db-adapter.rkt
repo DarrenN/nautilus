@@ -135,10 +135,10 @@ GROUP BY authors.name;
    "CREATE TABLE IF NOT EXISTS files
   (id integer primary key,
    paper_id int,
-   sha1 varchar unique not null,
-   filename varchar not null,
    directory varchar not null,
-   normalized varchar not null,
+   filename varchar not null,
+   sha1 varchar unique not null,
+   title varchar not null,
    created varchar,
    modified varchar);")
 
@@ -147,10 +147,10 @@ GROUP BY authors.name;
    "CREATE TABLE IF NOT EXISTS links
   (id integer primary key,
    paper_id int,
-   url varchar unique not null,
-   title varchar not null,
    directory varchar not null,
    status int not null,
+   title varchar not null,
+   url varchar unique not null,
    created varchar,
    modified varchar);"))
 
@@ -165,7 +165,7 @@ GROUP BY authors.name;
 
 (define/prepared-query db-insert-file
   "INSERT OR IGNORE INTO files
-   (sha1, filename, directory, normalized, created, modified)
+   (sha1, filename, directory, title, created, modified)
    values (?, ?, ?, ?, ?, ?)")
 
 (define/prepared-query db-update-file-paper-id
@@ -216,10 +216,10 @@ GROUP BY authors.name;
 (define (insert-file logger conn file)
   (with-handlers ([exn:fail:sql? (handle-sql-error logger file)])
     (db-insert-file conn
-                    (pdf-sha1 file)
-                    (pdf-filename file)
                     (pdf-directory file)
-                    (pdf-normalized file)
+                    (pdf-filename file)
+                    (pdf-sha1 file)
+                    (pdf-title file)
                     (pdf-created file)
                     (pdf-modified file))
     'ok))
@@ -304,7 +304,7 @@ GROUP BY authors.name;
   (define (test-fail-handler)
     (with-handlers ([exn:fail:sql? (handle-sql-error test-logger test-file)])
       (query mconn "INSERT INTO files
-                    (sha1, filename, directory, normalized, created, modified)
+                    (sha1, filename, directory, title, created, modified)
                     values (?, ?, ?, ?, ?, ?)"
              0 1 2 3 4 5)))
 
@@ -315,7 +315,7 @@ GROUP BY authors.name;
   (test-equal?
    "handle-sql-error calls logger with string"
    logger-call
-   "SQLERROR 2067 abort due to constraint violation for pdf kangaroo.pdf")
+   "SQLERROR 2067 abort due to constraint violation for pdf flooz")
 
   ;; test handle-sql-error directly
   (test-case
@@ -323,7 +323,7 @@ GROUP BY authors.name;
     (check-equal? 'error ((handle-sql-error test-logger test-file) test-exn))
     (check-equal?
      logger-call
-     "SQLERROR 2067 abort due to constraint violation for pdf kangaroo.pdf"))
+     "SQLERROR 2067 abort due to constraint violation for pdf flooz"))
 
   (test-case
       "handle-sql-error handles link structs"
