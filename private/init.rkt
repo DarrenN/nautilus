@@ -3,9 +3,9 @@
 (require db
          threading
          "db-adapter.rkt"
+         "fs.rkt"
          "git.rkt"
          "logger.rkt"
-         "pdf.rkt"
          "papers.rkt"
          "parameters.rkt"
          "readmes.rkt")
@@ -48,8 +48,7 @@ General notes
 - each function should take a logger and config (f logger config)
 - each function should return a state object: ('ok) ('error "error string")
 - if a function receives a state with car 'error it should immediately return it
-- As the state list passes through functions it should build up success/error
-  messages
+- As the state list passes through functions it should build up success/error messages
 - messages should be logged at the end
 |#
 
@@ -81,12 +80,22 @@ General notes
                         (hash-set 'sqlite-conn conn)
                         (hash-set 'logger format-log)))
 
+  #|
+  (define file-chan (create-channel))
+  (define db-chan (create-channel))
+  (define result-chan (create-channel))
+
+  (walk-dirs file-chan) ; pushes to file-chan
+  (fetch-papers file-chan db-chan) ;pull from file-chan pushes to db-chan
+  (write-metadata db-chan result-chan); pull from db-chan pushed to result-chan
+  |#
+  
   (parameterize ([current-config newconfig])
     (define result
       (~> state
-          ;process-pdfs
-          process-readmes
-          process-papers
+          walk-dirs
+          ;process-readmes
+          ;process-papers
           ;push-repo
           ))
 

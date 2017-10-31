@@ -35,6 +35,12 @@
     (cond [(hash-has-key? b key) (values key (hash-ref b key))]
           [(hash-has-key? a key) (values key (hash-ref a key))])))
 
+;; state falls through if it's an error
+(define (guard-state fn state)
+  (if (equal? (car state) 'error)
+      state
+      (fn state)))
+
 ;//////////////////////////////////////////////////////////////////////////////
 ; TESTS
 
