@@ -80,16 +80,16 @@ General notes
                         (hash-set 'sqlite-conn conn)
                         (hash-set 'logger format-log)))
 
-  #|
   (define file-chan (create-channel))
   (define db-chan (create-channel))
   (define result-chan (create-channel))
 
+  #|
   (walk-dirs file-chan) ; pushes to file-chan
   (fetch-papers file-chan db-chan) ;pull from file-chan pushes to db-chan
   (write-metadata db-chan result-chan); pull from db-chan pushed to result-chan
   |#
-  
+
   (parameterize ([current-config newconfig])
     (define result
       (~> state

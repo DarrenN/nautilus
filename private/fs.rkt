@@ -35,26 +35,6 @@
 (define (youtube? s)
   (not (null? (regexp-match* re-has-youtube s))))
 
-;; Keep tabs on how many 'DONE signals have come in
-(define (count-done-threads d)
-  (let ([ov (unbox done-counter)])
-    (when (equal? d 'DONE) (box-cas! done-counter ov (add1 ov)))
-    (unbox done-counter)))
-
-;; Find the worker by list-ref and nuke
-(define (kill-worker id)
-  (let* ([ths (unbox work-threads)]
-         [th (list-ref ths id)])
-    (when (and (thread? th) (thread-running? th)) (kill-thread th))))
-
-;; Dispatch path from thread to handle-directory
-(define (worker-proc result)
-  (define dir (first result))
-  (define repo-path (last result))
-  (if (equal? dir 'DONE)
-      'TERMINATE
-      (handle-directory dir repo-path)))
-
 ;; Path is a dir and not git related
 (define (valid-dir? p)
   (and (directory-exists? p)
@@ -64,13 +44,27 @@
 (define (get-directories path)
   (filter valid-dir? (directory-list path #:build? #t)))
 
-;; Sit on the result thread and print results
+;; Keep tabs on how many 'DONE signals have come in
+(define (count-done-threads d)
+  (let ([ov (unbox done-counter)])
+    (when (equal? d 'DONE) (box-cas! done-counter ov (add1 ov)))
+    (unbox done-counter)))
+
+;; Sit on the result thread and print results until all the DONEs are in
 (define (print-result-thread result)
   (define done-count (count-done-threads result))
   (displayln (format "PRINT: ~a" result))
   (if (>= done-count WORKERS)
       'TERMINATE
       result))
+
+;; Dispatch path from thread to handle-directory
+(define (worker-proc result)
+  (define dir (first result))
+  (define repo-path (last result))
+  (if (equal? dir 'DONE)
+      'TERMINATE
+      (handle-directory dir repo-path)))
 
 ;; Pull up the repo directories and feed to worker threads
 (define (recurse-dirs state)
@@ -84,16 +78,15 @@
     (create-channel-sink result-channel print-result-thread))
 
   ;; Create worker threads to process paths
-  (for ([i (range WORKERS)])
-    (create-channel-interceptor work-channel result-channel worker-proc))
+  (define work-threads
+    (for/list ([i (range WORKERS)])
+      (create-channel-interceptor work-channel result-channel worker-proc)))
 
   ;; Push directory paths into work channel
   (for ([d directories])
     (channel-put work-channel (list d repo-path)))
 
-  (for-each thread-wait (unbox work-threads))
-
-  state)
+  (for-each thread-wait work-threads))
 
 ;; Find README files in a dir and then recursively check for additional
 ;; folders to delve into
