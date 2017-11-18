@@ -96,15 +96,29 @@ General notes
   (write-metadata db-chan result-chan); pull from db-chan pushed to result-chan
   |#
 
+  #|
+
+  1. walk the READMEs
+  2. convert the READMEs into metadata.json files and *save*
+  3. put the metadata hash into the semanticscholar-chan
+  4. scholar workers make HEAD reqs for each url and save status in JSON
+  5. scholar workers make API hits to semantic-scholar and save updates in JSON
+  6. scholar workers put updated hash into db-chan
+  7. db worker pulls hashes from db-chan and INSERTs into SQLite
+  8. db worker puts hash into metadata-chan
+  9. metadata-worker pulls hashes from metadata-chan and writes metadata.md
+
+  |#
+
   (parameterize ([current-config newconfig])
     (define db-thread
       (create-channel-interceptor db-chan result-chan))
-    
+
     (define result-thread
       (create-channel-sink result-chan print-results))
 
     (walk-dirs db-chan)
-    
+
     ;(thread-wait result-thread)
 
     #|

@@ -14,9 +14,11 @@
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
 
+;; (-> string)
 (define (timestamp)
   (datetime->iso8601 (now/utc)))
 
+;; (-> number)
 (define (timestamp-posix)
   (exact->inexact (->posix (now))))
 
@@ -27,29 +29,35 @@
     [(list a b c) (values a b c)]))
 
 ;; Predicate for use in filter, etc
+;; (-> (-> bool bool))
 (define not-false? (compose not false?))
 
 ;; Get last item in vector
+;; (-> vector any)
 (define (vector-last v)
   (vector-ref v (- (vector-length v) 1)))
 
 ;; merge hash b into a
+;; (-> hash hash)
 (define (hash-merge a b)
   (for/hash ([key (remove-duplicates (append (hash-keys a) (hash-keys b)))])
     (cond [(hash-has-key? b key) (values key (hash-ref b key))]
           [(hash-has-key? a key) (values key (hash-ref a key))])))
 
 ;; state falls through if it's an error
+;; (-> λ list (U list (λ list)))
 (define (guard-state fn state)
   (if (equal? (car state) 'error)
       state
       (fn state)))
 
 ;; Is this a valid web url?
+;; (-> string bool)
 (define (is-valid-url? url)
   (regexp-match? #px"^(http|https)://" url))
 
 ;; Attempt to convert a relative file path into a GitHub blob path
+;; (-> string string url)
 (define (create-github-blob-url base url)
   (let ([blob-url (combine-url/relative (string->url base) GITHUB-BLOB-PATH)])
     (combine-url/relative blob-url (string-replace url #rx"^\\.\\./|^/" ""))))

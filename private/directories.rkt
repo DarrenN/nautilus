@@ -7,6 +7,8 @@
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
 
+;; Return a list of directories without .git folders
+;; (-> path (path-string))
 (define (get-directories dir-path)
   (parameterize ([current-directory dir-path])
     (filter

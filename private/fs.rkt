@@ -40,6 +40,7 @@
 (define count-result-thread (create-done-counter WORKERS))
 
 ;; Dispatch path from thread to handle-directory
+;; (-> list (U symbol string))
 (define (worker-proc result)
   (define dir (first result))
   (define repo-path (last result))
@@ -47,8 +48,8 @@
       'TERMINATE
       (handle-directory dir repo-path)))
 
-;; Find README files in a dir and then recursively check for additional
-;; folders to delve into
+;; [IO] Find README files in a dir, assemble metadata and process
+;; (-> string string string)
 (define (handle-directory dir-path repo-path)
   (define dirs (get-directories dir-path))
   (define readme-path (build-path dir-path readme-md))
@@ -57,8 +58,6 @@
 
   (define res
     (cond
-      [(file-exists? metadata-path)
-       (format "Metadata Found: ~a" metadata-path)]
       [(file-exists? readme-path)
        (format "Readme Found: ~a" (create-metadata-from-readme path-hash))]
       [else (format "Not Data File Found!: ~a" metadata-path)]))
@@ -66,43 +65,52 @@
   res)
 
 ;; Pipeline README from markdown to metadata.json
+;; (-> hasheq hasheq)
 (define (create-metadata-from-readme path-hash)
   (~> path-hash
       create-metadata-hash
       write-metadata-json))
 
-;; Convert readme into a hash we can use for JSON
+;; Walk map over a list of links and create a hash of title, link
+;; for valid URLs
+;; (-> ((string)) (hasheq))
+(define (create-links-hash links)
+  (define github-base-url
+    (format "https://~a" (hash-ref (current-config) 'pwlrepo-hostname)))
+  (filter
+   not-false?
+   (for/list ([link links])
+     (define raw-url (last link))
+     (define url
+       (if (is-valid-url? raw-url)
+           raw-url
+           (url->string
+            (create-github-blob-url github-base-url raw-url))))
+     (define title (first link))
+     (cond
+       [(or (scroll? title) (youtube? url)) #f]
+       [else (hash 'title title 'url url)]))))
+
+;; [IO] Convert readme into a hash we can use for JSON
+;; (-> hasheq hasheq)
 (define (create-metadata-hash paths)
   (define dir-path (hash-ref paths 'dir-path))
   (define repo-path (hash-ref paths 'repo-path))
   (define dirs (hash-ref paths 'dirs))
   (define relative-dir (find-relative-path repo-path dir-path))
-  (define github-base-url
-    (format "https://~a" (hash-ref (current-config) 'pwlrepo-hostname)))
   (define subs
     (map (λ (p) (path->string (find-relative-path repo-path p))) dirs))
   (define raw-links (call-with-input-file (build-path dir-path readme-md)
                       #:mode 'text get-readme-links))
-  (define links (filter
-                 not-false?
-                 (for/list ([link raw-links])
-                   (define raw-url (last link))
-                   (define url
-                     (if (is-valid-url? raw-url)
-                         raw-url
-                         (url->string
-                          (create-github-blob-url github-base-url raw-url))))
-                   (define title (first link))
-                   (cond
-                     [(or (scroll? title) (youtube? url)) #f]
-                     [else (hash 'title title 'url url)]))))
+  (define links (create-links-hash raw-links))
 
   (hasheq 'directory dir-path
           'relative-directory (path->string relative-dir)
           'subdirectories subs
           'links links))
 
-;; Write metadata hash to metadata.json file in directory
+;; [IO] Write metadata hash to metadata.json file in directory
+;; (-> hasheq hasheq)
 (define (write-metadata-json metadata)
   (define dir-path (hash-ref metadata 'directory))
   (define target-path (build-path dir-path metadata-json))
@@ -116,7 +124,8 @@
 
   metadata)
 
-;; Consume a string port and extract Markdown links via regex
+;; [IO] Consume a string port and extract Markdown links via regex
+;; (-> port list)
 (define (get-readme-links in)
   (define text (port->string in))
   (regexp-match* re-markdown-link text
