@@ -5,6 +5,9 @@
 
 (provide get-paper-dir)
 
+;//////////////////////////////////////////////////////////////////////////////
+; PUBLIC
+
 (define (get-paper-dir repo-path-string pdf-path)
   (define path (path->string pdf-path))
   (define filename (path->string (file-name-from-path pdf-path)))

@@ -8,7 +8,8 @@
          "logger.rkt"
          "papers.rkt"
          "parameters.rkt"
-         "readmes.rkt")
+         "readmes.rkt"
+         "threads.rkt")
 
 (provide nautilus-go)
 
@@ -52,6 +53,11 @@ General notes
 - messages should be logged at the end
 |#
 
+;; Sit on the result thread and print results until 'TERMINATE
+(define (print-results result)
+  (displayln (format "PRINT: ~a" result))
+  result)
+
 (define (nautilus-go)
   ;; Crash if sqlite3 is not available
   (when (not (sqlite3-available?))
@@ -80,9 +86,9 @@ General notes
                         (hash-set 'sqlite-conn conn)
                         (hash-set 'logger format-log)))
 
-  (define file-chan (create-channel))
-  (define db-chan (create-channel))
-  (define result-chan (create-channel))
+  ;;(define file-chan (create-channel))
+  (define db-chan (make-channel))
+  (define result-chan (make-channel))
 
   #|
   (walk-dirs file-chan) ; pushes to file-chan
@@ -91,14 +97,26 @@ General notes
   |#
 
   (parameterize ([current-config newconfig])
+    (define db-thread
+      (create-channel-interceptor db-chan result-chan))
+    
+    (define result-thread
+      (create-channel-sink result-chan print-results))
+
+    (walk-dirs db-chan)
+    
+    ;(thread-wait result-thread)
+
+    #|
     (define result
-      (~> state
-          walk-dirs
-          ;process-readmes
-          ;process-papers
-          ;push-repo
-          ))
+    (~> state
+    walk-dirs
+    ;process-readmes
+    ;process-papers
+    ;push-repo
+    ))
 
     (log-messages result)
+    |#
     (sleep 2) ; allow time to flush the log)
     (kill-thread logging-thread)))

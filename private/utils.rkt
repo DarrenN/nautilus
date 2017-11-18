@@ -1,11 +1,15 @@
 #lang racket/base
 
 (require gregor
+         net/url-string
          racket/bool
          racket/list
-         racket/match)
+         racket/match
+         racket/string)
 
 (provide (all-defined-out))
+
+(define GITHUB-BLOB-PATH "/blob/master/")
 
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
@@ -41,6 +45,15 @@
       state
       (fn state)))
 
+;; Is this a valid web url?
+(define (is-valid-url? url)
+  (regexp-match? #px"^(http|https)://" url))
+
+;; Attempt to convert a relative file path into a GitHub blob path
+(define (create-github-blob-url base url)
+  (let ([blob-url (combine-url/relative (string->url base) GITHUB-BLOB-PATH)])
+    (combine-url/relative blob-url (string-replace url #rx"^\\.\\./|^/" ""))))
+
 ;//////////////////////////////////////////////////////////////////////////////
 ; TESTS
 
@@ -48,6 +61,20 @@
   (require rackunit)
   (define re-date
     #px"^[\\d]{4}-[\\d]{2}-[\\d]{2}T[\\d]{2}:[\\d]{2}:[\\d]{2}.[\\d]*")
+
+  (test-case "create-github-blob-url"
+    (check-equal? (create-github-blob-url "https://svii.com/" "our-time.pdf")
+                  (string->url "https://svii.com/blob/master/our-time.pdf"))
+    (check-equal? (create-github-blob-url "https://svii.com/" "/your-time.pdf")
+                  (string->url "https://svii.com/blob/master/your-time.pdf"))
+    (check-equal? (create-github-blob-url "https://svii.com/" "../foo/your-time.pdf")
+                  (string->url "https://svii.com/blob/master/foo/your-time.pdf")))
+
+  (test-case "is-valid-url?"
+    (check-pred is-valid-url? "http://gooogle.com")
+    (check-pred is-valid-url? "https://gooogle.com")
+    (check-false (is-valid-url? "https:gooogle.com"))
+    (check-false (is-valid-url? "../arya/sansa")))
 
   (test-case "hash-merge"
     (define a (hash 'a 1 'b 2 'c 3 'd 4 'f 22))
